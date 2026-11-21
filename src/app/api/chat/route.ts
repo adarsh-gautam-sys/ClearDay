@@ -2,13 +2,8 @@ import { NextResponse } from "next/server";
 import { streamCopilotReply } from "@/lib/ai/gemini";
 import { detectRespiratoryEmergency } from "@/lib/ai/safety";
 import { ChatRequestSchema } from "@/lib/schemas";
-import { getClientIp, SlidingWindowRateLimiter } from "@/lib/security/rateLimit";
-
-const chatRateLimiter = new SlidingWindowRateLimiter(20, 60_000);
-
-export function resetChatRateLimit(): void {
-  chatRateLimiter.clear();
-}
+import { getClientIp } from "@/lib/security/rateLimit";
+import { chatRateLimiter } from "@/lib/security/routeState";
 
 export async function POST(request: Request) {
   const ip = getClientIp(request);

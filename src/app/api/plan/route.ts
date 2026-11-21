@@ -1,17 +1,10 @@
 import { NextResponse } from "next/server";
 import { generateActionPlan, hasGeminiKey } from "@/lib/ai/gemini";
-import { type ActionPlanResponse, PlanRequestSchema } from "@/lib/schemas";
-import { TtlCache } from "@/lib/security/cache";
-import { getClientIp, SlidingWindowRateLimiter } from "@/lib/security/rateLimit";
+import { PlanRequestSchema } from "@/lib/schemas";
+import { getClientIp } from "@/lib/security/rateLimit";
+import { planCache, planRateLimiter } from "@/lib/security/routeState";
 
-const planRateLimiter = new SlidingWindowRateLimiter(15, 60_000);
-const planCache = new TtlCache<ActionPlanResponse>(150);
 const PLAN_TTL_MS = 15 * 60 * 1000;
-
-export function resetPlanRouteState(): void {
-  planRateLimiter.clear();
-  planCache.clear();
-}
 
 export async function POST(request: Request) {
   const ip = getClientIp(request);

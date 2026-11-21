@@ -2,13 +2,8 @@ import { NextResponse } from "next/server";
 import { fetchAirQuality, searchCities } from "@/lib/air-quality/openMeteo";
 import { findPresetById } from "@/lib/air-quality/presets";
 import { CoordinateQuerySchema } from "@/lib/schemas";
-import { getClientIp, SlidingWindowRateLimiter } from "@/lib/security/rateLimit";
-
-const aqRateLimiter = new SlidingWindowRateLimiter(60, 60_000);
-
-export function resetAirQualityRateLimit(): void {
-  aqRateLimiter.clear();
-}
+import { getClientIp } from "@/lib/security/rateLimit";
+import { aqRateLimiter } from "@/lib/security/routeState";
 
 export async function GET(request: Request) {
   const ip = getClientIp(request);

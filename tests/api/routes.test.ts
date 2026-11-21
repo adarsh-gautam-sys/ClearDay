@@ -1,21 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  GET as getAirQuality,
-  resetAirQualityRateLimit,
-} from "@/app/api/air-quality/route";
-import { POST as postChat, resetChatRateLimit } from "@/app/api/chat/route";
-import { POST as postPlan, resetPlanRouteState } from "@/app/api/plan/route";
+import { GET as getAirQuality } from "@/app/api/air-quality/route";
+import { POST as postChat } from "@/app/api/chat/route";
+import { POST as postPlan } from "@/app/api/plan/route";
 import { clearAirQualityCache } from "@/lib/air-quality/openMeteo";
 import { buildPresetSnapshot, CITY_PRESETS } from "@/lib/air-quality/presets";
 import { ActionPlanResponseSchema, DEFAULT_PROFILE } from "@/lib/schemas";
+import { resetAllRouteState } from "@/lib/security/routeState";
 
 describe("API Route Handlers", () => {
   const sampleSnapshot = buildPresetSnapshot(CITY_PRESETS[0]!);
 
   beforeEach(() => {
-    resetAirQualityRateLimit();
-    resetPlanRouteState();
-    resetChatRateLimit();
+    resetAllRouteState();
     clearAirQualityCache();
     delete process.env.GEMINI_API_KEY;
   });
