@@ -71,9 +71,6 @@ export function AirBriefingCard({ airQuality }: AirBriefingCardProps) {
         >
           <BandIcon band={current.band} />
           <span>{current.categoryLabel}</span>
-          <span className="font-mono text-[11px] opacity-85">
-            ({style.shortTag})
-          </span>
         </div>
       </div>
 

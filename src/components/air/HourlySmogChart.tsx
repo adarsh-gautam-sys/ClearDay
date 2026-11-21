@@ -54,8 +54,8 @@ export function HourlySmogChart({
     <div className="mt-4 rounded-lg border border-[#E5E0D5] bg-[#F6F4EF] p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#52525B]">
-            24-Hour Winter PM2.5 Curve (µg/m³) — {cityName}
+          <span className="font-mono text-[10px] font-semibold tracking-wider text-[#52525B]">
+            <span className="uppercase">24-Hour Winter PM2.5 Curve</span> (µg/m³) — {cityName}
           </span>
           {activePoint && (
             <p
@@ -177,11 +177,13 @@ export function HourlySmogChart({
       ) : (
         <div className="mt-2 max-h-48 overflow-auto rounded-md border border-[#D8D2C5] bg-[#FCFBF8]">
           <table className="w-full text-left font-mono text-xs tabular-nums">
-            <thead className="sticky top-0 border-b border-[#D8D2C5] bg-[#ECE8DF] text-[10px] uppercase text-[#52525B]">
+            <thead className="sticky top-0 border-b border-[#D8D2C5] bg-[#ECE8DF] text-[10px] text-[#52525B]">
               <tr>
-                <th scope="col" className="px-3 py-1.5">Hour</th>
-                <th scope="col" className="px-3 py-1.5">PM2.5 (µg/m³)</th>
-                <th scope="col" className="px-3 py-1.5">US AQI</th>
+                <th scope="col" className="px-3 py-1.5 uppercase">Hour</th>
+                <th scope="col" className="px-3 py-1.5">
+                  <span className="uppercase">PM2.5</span> (µg/m³)
+                </th>
+                <th scope="col" className="px-3 py-1.5 uppercase">US AQI</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E5E0D5]">

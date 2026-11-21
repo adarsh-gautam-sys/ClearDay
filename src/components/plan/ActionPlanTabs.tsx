@@ -106,11 +106,11 @@ export function ActionPlanTabs({
               }}
               className={
                 isSelected
-                  ? "rounded-md bg-[#FCFBF8] px-2 py-2 text-left text-xs font-semibold text-[#18181B] shadow-beautiful-sm sm:px-3"
-                  : "rounded-md px-2 py-2 text-left text-xs font-medium text-[#52525B] hover:text-[#18181B] sm:px-3"
+                  ? "flex flex-col gap-0.5 rounded-md bg-[#FCFBF8] px-2.5 py-2 text-left text-[11px] font-semibold leading-tight text-[#18181B] shadow-beautiful-sm sm:flex-row sm:items-center sm:gap-1.5 sm:px-3 sm:text-xs"
+                  : "flex flex-col gap-0.5 rounded-md px-2.5 py-2 text-left text-[11px] font-medium leading-tight text-[#52525B] hover:text-[#18181B] sm:flex-row sm:items-center sm:gap-1.5 sm:px-3 sm:text-xs"
               }
             >
-              <span className="mr-1.5 font-mono text-[10px] text-[#0F6E6E]">
+              <span className="font-mono text-[10px] text-[#0F6E6E]">
                 {tab.marker}
               </span>
               <span>{tab.label}</span>

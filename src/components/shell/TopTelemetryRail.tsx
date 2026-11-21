@@ -128,7 +128,7 @@ export function TopTelemetryRail({
 
         {/* City Search + GPS + AI Mode + Reset */}
         <div className="flex flex-wrap items-center gap-2">
-          <div ref={containerRef} className="relative flex-1 sm:w-64 sm:flex-none">
+          <div ref={containerRef} className="relative w-full sm:w-64 sm:flex-none">
             <label htmlFor="city-search-input" className="sr-only">
               Search city for local air quality
             </label>
