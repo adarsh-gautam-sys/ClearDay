@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+:root {
+  --bg-outer: #141517;
+  --bg-paper: #f6f4ef;
+  --bg-card: #fcfbf8;
+  --bg-rail: #ece8df;
+  --border-hairline: #d8d2c5;
+  --ink-primary: #18181b;
+  --ink-secondary: #52525b;
+  --accent-teal: #0f6e6e;
+}
+
+body {
+  background-color: var(--bg-outer);
+  color: var(--ink-primary);
+}
