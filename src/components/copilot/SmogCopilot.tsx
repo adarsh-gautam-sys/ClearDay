@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { AlertTriangle, Send, Square } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { parseSseBuffer } from "@/lib/ai/sse";
 import type {
   AirQualitySnapshot,
@@ -9,6 +10,7 @@ import type {
   HouseholdProfile,
 } from "@/lib/schemas";
 import { AgentStatus, type AgentPhase } from "./AgentStatus";
+import { SafeMessageContent } from "./SafeMessageContent";
 
 interface SmogCopilotProps {
   airQuality: AirQualitySnapshot;
@@ -149,15 +151,15 @@ export function SmogCopilot({
     >
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E5E0D5] pb-3">
         <div>
-          <span className="font-mono text-[11px] font-medium uppercase tracking-wider text-[#52525B]">
-            05 · GROUNDED SMOG COPILOT
-          </span>
           <h2
             id="smog-copilot-heading"
-            className="mt-0.5 text-base font-bold text-[#18181B]"
+            className="text-base font-bold text-[#18181B]"
           >
-            Ask About Today&apos;s Air in {airQuality.location.name}
+            Smog Copilot · {airQuality.location.name}
           </h2>
+          <p className="mt-0.5 text-xs text-[#52525B]">
+            Grounded Q&amp;A synced with live telemetry &amp; your adopted plan.
+          </p>
         </div>
 
         <AgentStatus
@@ -189,15 +191,16 @@ export function SmogCopilot({
       {/* Quick Prompts */}
       <div className="mt-3 flex flex-wrap gap-1.5">
         {QUICK_PROMPTS.map((chip) => (
-          <button
+          <Button
             key={chip}
-            type="button"
+            variant="paper"
+            size="sm"
             disabled={isBusy}
             onClick={() => void submitQuestion(chip)}
-            className="rounded-md border border-[#D8D2C5] bg-[#F6F4EF] px-2.5 py-1 text-left text-xs font-medium text-[#3F3F46] hover:bg-[#ECE8DF] hover:text-[#18181B] disabled:opacity-50"
+            className="h-auto whitespace-normal py-1.5 text-left font-medium text-[#3F3F46]"
           >
             {chip}
-          </button>
+          </Button>
         ))}
       </div>
 
@@ -226,9 +229,11 @@ export function SmogCopilot({
               <span className="mb-1 block font-mono text-[10px] font-semibold uppercase tracking-wider text-[#52525B]">
                 {msg.role === "user" ? "You" : "ClearDay Copilot"}
               </span>
-              <div className="whitespace-pre-line">
-                {msg.content || "…"}
-              </div>
+              {msg.role === "user" ? (
+                <p className="whitespace-pre-line">{msg.content}</p>
+              ) : (
+                <SafeMessageContent content={msg.content} />
+              )}
             </div>
           ))
         )}
@@ -252,26 +257,18 @@ export function SmogCopilot({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Ask about school runs, masks, DIY filters, or heating..."
-          className="min-w-0 flex-1 rounded-lg border border-[#D8D2C5] bg-[#F6F4EF] px-3 py-2 text-xs text-[#18181B] placeholder:text-[#71717A] shadow-beautiful-sm"
+          className="h-8 min-w-0 flex-1 rounded-lg border border-[#D8D2C5] bg-[#F6F4EF] px-3 text-xs text-[#18181B] placeholder:text-[#71717A] shadow-beautiful-sm"
         />
         {isBusy ? (
-          <button
-            type="button"
-            onClick={handleStop}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-[#991B1B] bg-[#FEE2E2] px-3.5 py-2 text-xs font-semibold text-[#991B1B] shadow-beautiful-sm hover:bg-[#FECACA]"
-          >
+          <Button type="button" variant="danger" onClick={handleStop}>
             <Square className="h-3 w-3 fill-current" aria-hidden="true" />
             <span>Stop</span>
-          </button>
+          </Button>
         ) : (
-          <button
-            type="submit"
-            disabled={!input.trim()}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-[#0F6E6E] px-3.5 py-2 text-xs font-semibold text-[#FCFBF8] shadow-beautiful-sm hover:bg-[#0D5C5C] disabled:opacity-50"
-          >
+          <Button type="submit" disabled={!input.trim()}>
             <Send className="h-3.5 w-3.5" aria-hidden="true" />
             <span>Ask</span>
-          </button>
+          </Button>
         )}
       </form>
 

@@ -1,7 +1,14 @@
 "use client";
 
-import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   BASELINE_INFILTRATION_BY_PURIFIER,
   CAR_WEEKLY_CO2_KG,
@@ -16,60 +23,34 @@ interface MethodologyModalProps {
 }
 
 export function MethodologyModal({ open, onClose }: MethodologyModalProps) {
-  const closeBtnRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    closeBtnRef.current?.focus();
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
   const entries = Object.entries(IMPACT_FACTORS);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#141517]/70 p-4 backdrop-blur-xs"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose();
       }}
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="methodology-modal-title"
-        className="max-h-[85vh] w-full max-w-2xl overflow-auto rounded-2xl border border-[#D8D2C5] bg-[#FCFBF8] p-5 shadow-beautiful-lg sm:p-6"
-      >
+      <DialogContent>
         <div className="flex items-start justify-between gap-4 border-b border-[#E5E0D5] pb-3">
           <div>
-            <p className="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#0F6E6E]">
-              TRANSPARENCY & CITATIONS
-            </p>
-            <h2
-              id="methodology-modal-title"
-              className="mt-0.5 text-lg font-bold text-[#18181B]"
-            >
-              How ClearDay Calculates Your Direct Impact
-            </h2>
+            <DialogTitle>How ClearDay Calculates Your Direct Impact</DialogTitle>
+            <DialogDescription className="mt-0.5">
+              Deterministic formulas and peer-reviewed environmental emission
+              factors (US EPA, WHO, DEFRA, Berkeley Earth).
+            </DialogDescription>
           </div>
 
-          <button
-            ref={closeBtnRef}
-            type="button"
-            onClick={onClose}
-            aria-label="Close methodology dialog"
-            className="rounded-lg border border-[#D8D2C5] bg-[#F6F4EF] p-1.5 text-[#18181B] hover:bg-[#ECE8DF]"
-          >
-            <X className="h-4 w-4" aria-hidden="true" />
-          </button>
+          <DialogClose asChild>
+            <Button
+              variant="paper"
+              size="icon"
+              aria-label="Close methodology dialog"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          </DialogClose>
         </div>
 
         <div className="mt-4 space-y-4 text-xs leading-relaxed text-[#3F3F46]">
@@ -105,7 +86,10 @@ export function MethodologyModal({ open, onClose }: MethodologyModalProps) {
             <ul className="mt-1 list-disc space-y-1 pl-4">
               <li>
                 <strong>Cigarette equivalence heuristic:</strong> Berkeley Earth
-                rule-of-thumb (<span className="font-mono">{PM25_PER_CIGARETTE_UG_M3} µg/m³</span>{" "}
+                rule-of-thumb (
+                <span className="font-mono">
+                  {PM25_PER_CIGARETTE_UG_M3} µg/m³
+                </span>{" "}
                 24-hour PM2.5 ≈ 1 cigarette/day) for intuitive communication.
               </li>
               <li>
@@ -115,7 +99,11 @@ export function MethodologyModal({ open, onClose }: MethodologyModalProps) {
               </li>
               <li>
                 <strong>Cars-off-road equivalence:</strong> US EPA passenger car
-                average (<span className="font-mono">{CAR_WEEKLY_CO2_KG} kg CO₂/week</span>).
+                average (
+                <span className="font-mono">
+                  {CAR_WEEKLY_CO2_KG} kg CO₂/week
+                </span>
+                ).
               </li>
             </ul>
           </div>
@@ -143,7 +131,7 @@ export function MethodologyModal({ open, onClose }: MethodologyModalProps) {
             </div>
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

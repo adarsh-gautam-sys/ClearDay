@@ -1,7 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { Info, Leaf, Shield, Users } from "lucide-react";
+import { HelpCircle, Info, Leaf, Shield, Users } from "lucide-react";
+import { CountUp } from "@/components/reactbits/CountUp";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { ImpactSummary } from "@/lib/impact/calculator";
 import { MethodologyModal } from "./MethodologyModal";
 
@@ -35,25 +44,25 @@ export function ImpactLedger({
     >
       <div className="flex items-start justify-between gap-2 border-b border-[#E5E0D5] pb-3">
         <div>
-          <span className="font-mono text-[11px] font-medium uppercase tracking-wider text-[#52525B]">
-            04 · DIRECT IMPACT LEDGER
-          </span>
           <h2
             id="impact-ledger-heading"
-            className="mt-0.5 text-base font-bold text-[#18181B]"
+            className="text-base font-bold text-[#18181B]"
           >
-            Your Adopted Choices ({adoptedCount} active)
+            Direct Impact Ledger ({adoptedCount} active)
           </h2>
+          <p className="mt-0.5 text-xs text-[#52525B]">
+            Updates live from deterministic EPA/WHO factors as you adopt actions.
+          </p>
         </div>
 
-        <button
-          type="button"
+        <Button
+          variant="paper"
+          size="sm"
           onClick={() => setModalOpen(true)}
-          className="inline-flex items-center gap-1 rounded-lg border border-[#D8D2C5] bg-[#F6F4EF] px-2.5 py-1 text-xs font-medium text-[#18181B] hover:bg-[#ECE8DF]"
         >
           <Info className="h-3.5 w-3.5 text-[#0F6E6E]" aria-hidden="true" />
           <span>Methodology</span>
-        </button>
+        </Button>
       </div>
 
       {/* Indoor PM2.5 Exposure Drop */}
@@ -63,9 +72,13 @@ export function ImpactLedger({
             <Shield className="h-3.5 w-3.5 text-[#0F6E6E]" aria-hidden="true" />
             Estimated Indoor PM2.5
           </span>
-          <span className="rounded bg-[#E6F4F1] px-2 py-0.5 font-mono text-xs font-semibold tabular-nums text-[#0F6E6E]">
-            -{impact.indoorReductionPercent}% exposure
-          </span>
+          <Badge tone="teal" className="tabular-nums">
+            <CountUp
+              to={impact.indoorReductionPercent}
+              prefix="-"
+              suffix="% exposure"
+            />
+          </Badge>
         </div>
 
         <div className="mt-2.5 flex items-baseline justify-between font-mono text-xs tabular-nums">
@@ -73,7 +86,14 @@ export function ImpactLedger({
             Baseline: <strong>{impact.indoorPm25Before} µg/m³</strong>
           </span>
           <span className="text-[#0F6E6E]">
-            With plan: <strong>{impact.indoorPm25After} µg/m³</strong>
+            With plan:{" "}
+            <strong>
+              <CountUp
+                to={impact.indoorPm25After}
+                decimals={1}
+                suffix=" µg/m³"
+              />
+            </strong>
           </span>
         </div>
 
@@ -87,11 +107,34 @@ export function ImpactLedger({
           />
         </div>
 
-        <p className="mt-2 font-mono text-[11px] tabular-nums text-[#52525B]">
-          Avoids ~<strong>{impact.pm25DropUgM3} µg/m³</strong> indoor PM2.5 (≈{" "}
-          <strong>{impact.cigaretteEquivAvoidedPerDay}</strong> cig-equiv/day
-          breathing load)
-        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-1 font-mono text-[11px] tabular-nums text-[#52525B]">
+          <span>
+            Avoids ~<strong>{impact.pm25DropUgM3} µg/m³</strong> indoor PM2.5
+            (≈{" "}
+            <strong>
+              <CountUp
+                to={impact.cigaretteEquivAvoidedPerDay}
+                decimals={1}
+              />
+            </strong>{" "}
+            cig-equiv/day)
+          </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="About cigarette-equivalence heuristic"
+                className="inline-flex cursor-help items-center text-[#0F6E6E]"
+              >
+                <HelpCircle className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              Berkeley Earth heuristic: ~22 µg/m³ of 24h PM2.5 exposure
+              approximates the particulate inhalation load of 1 cigarette/day.
+            </TooltipContent>
+          </Tooltip>
+        </div>
       </div>
 
       {/* Daily & Winter Emissions */}
@@ -102,7 +145,11 @@ export function ImpactLedger({
             Daily Avoided
           </div>
           <p className="mt-1 font-mono text-lg font-bold tabular-nums text-[#18181B]">
-            {impact.dailyCo2KgSaved.toFixed(1)} kg CO₂e
+            <CountUp
+              to={impact.dailyCo2KgSaved}
+              decimals={1}
+              suffix=" kg CO₂e"
+            />
           </p>
           <p className="font-mono text-[11px] tabular-nums text-[#52525B]">
             +{impact.dailyPm25GramsAvoided.toFixed(1)} g PM2.5 curbed
@@ -114,7 +161,7 @@ export function ImpactLedger({
             90-Day Winter Total
           </div>
           <p className="mt-1 font-mono text-lg font-bold tabular-nums text-[#18181B]">
-            {impact.winterCo2KgSaved.toFixed(0)} kg CO₂e
+            <CountUp to={impact.winterCo2KgSaved} suffix=" kg CO₂e" />
           </p>
           <p className="font-mono text-[11px] tabular-nums text-[#52525B]">
             +{impact.winterPm25GramsAvoided.toFixed(0)} g PM2.5 curbed
@@ -122,41 +169,50 @@ export function ImpactLedger({
         </div>
       </div>
 
-      {/* Community Multiplier Slider */}
+      {/* Community Multiplier Radix Slider */}
       <div className="mt-3 rounded-lg border border-[#B2DBD4] bg-[#E6F4F1]/55 p-3">
         <div className="flex items-center justify-between gap-2">
-          <label
-            htmlFor="community-multiplier-slider"
+          <span
+            id="community-multiplier-label"
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#18181B]"
           >
             <Users className="h-3.5 w-3.5 text-[#0F6E6E]" aria-hidden="true" />
             Community Scale Multiplier
-          </label>
+          </span>
           <span className="font-mono text-xs font-bold tabular-nums text-[#0F6E6E]">
             {communityHouseholds}{" "}
             {communityHouseholds === 1 ? "household" : "households"}
           </span>
         </div>
 
-        <input
+        <Slider
           id="community-multiplier-slider"
-          type="range"
           min={1}
           max={500}
           step={1}
           value={communityHouseholds}
-          onChange={(e) => onHouseholdsChange(Number(e.target.value))}
-          className="mt-2 w-full accent-[#0F6E6E]"
+          onValueChange={onHouseholdsChange}
+          ariaLabelledBy="community-multiplier-label"
+          ariaValueText={`${communityHouseholds} households`}
+          className="mt-1"
         />
 
-        <p className="mt-1.5 text-xs leading-relaxed text-[#3F3F46]">
+        <p className="mt-1 text-xs leading-relaxed text-[#3F3F46]">
           Together over winter: avoids{" "}
           <strong className="font-mono tabular-nums text-[#18181B]">
-            {impact.communityWinterCo2Tons.toFixed(2)} metric tons CO₂e
+            <CountUp
+              to={impact.communityWinterCo2Tons}
+              decimals={2}
+              suffix=" metric tons CO₂e"
+            />
           </strong>{" "}
           — equal to taking{" "}
           <strong className="font-mono tabular-nums text-[#0F6E6E]">
-            {impact.equivalentCarsOffRoadWeek.toFixed(1)} cars
+            <CountUp
+              to={impact.equivalentCarsOffRoadWeek}
+              decimals={1}
+              suffix=" cars"
+            />
           </strong>{" "}
           off local roads each smog week.
         </p>

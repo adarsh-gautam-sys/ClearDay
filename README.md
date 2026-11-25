@@ -18,14 +18,12 @@
 
 ---
 
-## Design System (`MengTo/Skills`)
+## Design System & Interactive Frontend (`MengTo/Skills` + `Impeccable` + Three.js + shadcn/ui + ReactBits)
 
-Built following the [`MengTo/Skills`](https://github.com/MengTo/Skills) web-design skill specifications:
-- `light-mode-paper-technical`: Deep charcoal outer frame (`#141517`), warm diagonal-textured paper interior (`#F6F4EF`), elevated parchment cards (`#FCFBF8`), corner L-brackets, and restrained atmospheric teal (`#0F6E6E`).
-- `split-layout-technical`: Asymmetric desktop split workspace stacking cleanly on mobile.
-- `beautiful-shadows`: Layered neutral elevation utilities (`sm`, `md`, `lg`).
-- `number-details`: Monospace architectural markers (`00`–`05`) with `tabular-nums`.
-- `thinking-orbs`: Accessible `ThinkingOrb` canvas indicators paired with single-source `aria-live="polite"` status text.
+- **Three.js Volumetric Smog Chamber (`threejs-weather` skill)**: Pre-allocated WebGL particulate pool (`setDrawRange`) with live pointer parallax, 24-hour scrubber coupling, an **Outdoor vs. Inside Plan** simulation toggle, offscreen/tab pausing, and static reduced-motion/no-WebGL fallback.
+- **shadcn/ui Radix Primitives**: Accessible `Tabs`, `Dialog` (Portal + focus trap), `Slider`, `Tooltip`, `Button`, and `Badge` styled with `class-variance-authority` and `tailwind-merge`.
+- **ReactBits Micro-Interactions**: `CountUp`, `SpotlightCard`, `ShinyText`, and `BlurText`, plus safe XSS-free React Markdown formatting (`SafeMessageContent`) for Copilot replies.
+- **`MengTo/Skills` + `Impeccable` Craft**: Deep charcoal outer frame (`#141517`), warm diagonal-textured paper interior (`#F6F4EF`), elevated parchment cards (`#FCFBF8`), layered neutral `beautiful-shadows`, `thinking-orbs` live status indicators, and `0` Impeccable detector violations.
 
 ---
 

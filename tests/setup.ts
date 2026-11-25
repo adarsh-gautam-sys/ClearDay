@@ -35,8 +35,20 @@ if (typeof window !== "undefined") {
     });
   }
 
+  if (!("ResizeObserver" in window)) {
+    class MockResizeObserver implements ResizeObserver {
+      disconnect() {}
+      observe() {}
+      unobserve() {}
+    }
+    Object.defineProperty(window, "ResizeObserver", {
+      writable: true,
+      value: MockResizeObserver,
+    });
+  }
+
   if (typeof HTMLCanvasElement !== "undefined") {
-    const noopContext = {
+    const noopContext2d = {
       clearRect: () => {},
       save: () => {},
       restore: () => {},
@@ -53,6 +65,9 @@ if (typeof window !== "undefined") {
       translate: () => {},
       rotate: () => {},
       setTransform: () => {},
+      createRadialGradient: () => ({
+        addColorStop: () => {},
+      }),
       fillStyle: "",
       strokeStyle: "",
       globalAlpha: 1,
@@ -61,7 +76,10 @@ if (typeof window !== "undefined") {
 
     Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
       writable: true,
-      value: () => noopContext,
+      value: (contextId: string) => {
+        if (contextId === "2d") return noopContext2d;
+        return null;
+      },
     });
   }
 }

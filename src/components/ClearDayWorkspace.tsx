@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { calculateImpact } from "@/lib/impact/calculator";
 import {
   DEFAULT_PROFILE,
@@ -264,62 +265,70 @@ export function ClearDayWorkspace({
   );
 
   return (
-    <FramedShell>
-      <TopTelemetryRail
-        airQuality={airQuality}
-        aiMode={plan.mode}
-        isLoadingAir={airPhase === "retrieving"}
-        onSelectLocation={handleSelectLocation}
-        onResetAll={handleResetAll}
-      />
+    <TooltipProvider delayDuration={200}>
+      <FramedShell>
+        <TopTelemetryRail
+          airQuality={airQuality}
+          aiMode={plan.mode}
+          isLoadingAir={airPhase === "retrieving"}
+          onSelectLocation={handleSelectLocation}
+          onResetAll={handleResetAll}
+        />
 
-      <HouseholdProfileBar profile={profile} onChange={handleProfileChange} />
+        <HouseholdProfileBar profile={profile} onChange={handleProfileChange} />
 
-      {(airPhase === "retrieving" || statusError) && (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#D8D2C5] bg-[#F6F4EF] px-4 py-2 sm:px-6">
-          <AgentStatus phase={airPhase} label="Fetching local air telemetry…" />
-          {statusError && (
-            <p role="alert" className="text-xs font-medium text-[#9A3412]">
-              {statusError}
-            </p>
-          )}
-        </div>
-      )}
+        {(airPhase === "retrieving" || statusError) && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#D8D2C5] bg-[#F6F4EF] px-4 py-2 sm:px-6">
+            <AgentStatus
+              phase={airPhase}
+              label="Fetching local air telemetry…"
+            />
+            {statusError && (
+              <p role="alert" className="text-xs font-medium text-[#9A3412]">
+                {statusError}
+              </p>
+            )}
+          </div>
+        )}
 
-      {/* Technical Split-Screen Workspace (MengTo split-layout-technical) */}
-      <main
-        id="main-content"
-        className="grid gap-4 p-4 sm:p-6 lg:grid-cols-[minmax(0,1.32fr)_minmax(340px,0.95fr)] lg:gap-6"
-      >
-        <div className="min-w-0 space-y-5">
-          <AirBriefingCard airQuality={airQuality} />
-          <ActionPlanTabs
-            plan={plan}
-            scope={profile.scope}
-            adoptedIds={adoptedIds}
-            planPhase={planPhase}
-            onToggleAdopt={handleToggleAdopt}
-            onRegeneratePlan={() => void refreshPlan(airQuality, profile)}
-          />
-        </div>
-
-        <aside
-          aria-label="Impact ledger and Smog Copilot"
-          className="min-w-0 space-y-5 lg:border-l lg:border-[#D8D2C5] lg:pl-6"
+        {/* Technical Split-Screen Workspace (MengTo split-layout-technical) */}
+        <main
+          id="main-content"
+          className="grid gap-4 p-4 sm:p-6 lg:grid-cols-[minmax(0,1.32fr)_minmax(340px,0.95fr)] lg:gap-6"
         >
-          <ImpactLedger
-            impact={impact}
-            adoptedCount={adoptedCategories.length}
-            communityHouseholds={communityHouseholds}
-            onHouseholdsChange={setCommunityHouseholds}
-          />
-          <SmogCopilot
-            airQuality={airQuality}
-            profile={profile}
-            adoptedTitles={adoptedTitles}
-          />
-        </aside>
-      </main>
-    </FramedShell>
+          <div className="min-w-0 space-y-5">
+            <AirBriefingCard
+              airQuality={airQuality}
+              indoorPm25After={impact.indoorPm25After}
+            />
+            <ActionPlanTabs
+              plan={plan}
+              scope={profile.scope}
+              adoptedIds={adoptedIds}
+              planPhase={planPhase}
+              onToggleAdopt={handleToggleAdopt}
+              onRegeneratePlan={() => void refreshPlan(airQuality, profile)}
+            />
+          </div>
+
+          <aside
+            aria-label="Impact ledger and Smog Copilot"
+            className="min-w-0 space-y-5 lg:border-l lg:border-[#D8D2C5] lg:pl-6"
+          >
+            <ImpactLedger
+              impact={impact}
+              adoptedCount={adoptedCategories.length}
+              communityHouseholds={communityHouseholds}
+              onHouseholdsChange={setCommunityHouseholds}
+            />
+            <SmogCopilot
+              airQuality={airQuality}
+              profile={profile}
+              adoptedTitles={adoptedTitles}
+            />
+          </aside>
+        </main>
+      </FramedShell>
+    </TooltipProvider>
   );
 }

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ClearDayWorkspace } from "@/components/ClearDayWorkspace";
@@ -31,7 +31,7 @@ describe("ClearDayWorkspace UI flows", () => {
     expect(screen.getByText(/40\.76°N, 111\.89°W/)).toBeInTheDocument();
   });
 
-  it("switches tabs, toggles action adoption synchronously, updates community slider, and closes Methodology modal via Escape", async () => {
+  it("toggles 3D Outdoor vs Inside Plan view, switches Radix tabs, adopts actions synchronously, moves Radix slider via keyboard, and closes Radix dialog via Escape", async () => {
     const user = userEvent.setup();
     const fetchSpy = vi.spyOn(globalThis, "fetch");
 
@@ -40,6 +40,10 @@ describe("ClearDayWorkspace UI flows", () => {
     );
 
     expect(screen.getByText(/2 active/i)).toBeInTheDocument();
+
+    // Toggle Interactive Atmosphere View from Outdoor to Inside Plan
+    await user.click(screen.getByRole("button", { name: /Inside Plan/i }));
+    expect(screen.getByText(/filtered indoor air/i)).toBeInTheDocument();
 
     // Switch to 02 Indoor Hacks and expand setup steps
     await user.click(screen.getByRole("tab", { name: /Indoor Hacks/i }));
@@ -63,19 +67,24 @@ describe("ClearDayWorkspace UI flows", () => {
       screen.getByText(/SHAREABLE COMMUNITY ADVISORY DRAFT/i),
     ).toBeInTheDocument();
 
-    // Adjust community multiplier slider
-    const slider = screen.getByLabelText(/Community Scale Multiplier/i);
-    fireEvent.change(slider, { target: { value: "100" } });
-    expect(screen.getByText(/100 households/i)).toBeInTheDocument();
+    // Adjust Radix Community Scale Multiplier slider via keyboard
+    const slider = screen.getByRole("slider", {
+      name: /Community Scale Multiplier/i,
+    });
+    act(() => {
+      slider.focus();
+    });
+    await user.keyboard("{ArrowRight}");
+    expect(screen.getByText(/26 households/i)).toBeInTheDocument();
 
-    // Open Methodology modal and close with Escape
+    // Open Radix Methodology dialog and close with Escape
     await user.click(screen.getByRole("button", { name: /Methodology/i }));
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("streams SSE Smog Copilot reply and surfaces medical emergency banner when signaled", async () => {
+  it("streams formatted SSE Smog Copilot reply (bold + bullets) and surfaces medical emergency banner", async () => {
     const user = userEvent.setup();
     const encoder = new TextEncoder();
     const ssePayload =
@@ -85,7 +94,9 @@ describe("ClearDayWorkspace UI flows", () => {
       }) +
       formatSseEvent({
         event: "chunk",
-        data: { text: "Seek immediate emergency care for chest pain." },
+        data: {
+          text: "**Action:** Seek immediate emergency care.\n* Stay indoors and keep calm.",
+        },
       }) +
       formatSseEvent({ event: "done", data: { ok: true } });
 
@@ -116,10 +127,14 @@ describe("ClearDayWorkspace UI flows", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText(/Seek immediate emergency care for chest pain\./i),
+        screen.getByText(/Seek immediate emergency care\./i),
       ).toBeInTheDocument();
     });
 
+    expect(screen.getByText("Action:")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Stay indoors and keep calm\./i).tagName,
+    ).toBe("LI");
     expect(screen.getByRole("alert")).toHaveTextContent(
       /Emergency Medical Notice/i,
     );

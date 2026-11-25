@@ -2,18 +2,22 @@
 
 import { useState } from "react";
 import { Table2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
 import type { HourlyPoint } from "@/lib/schemas";
 
 interface HourlySmogChartProps {
   hourly: HourlyPoint[];
   strokeColor: string;
   cityName: string;
+  onScrubPm25?: (pm25: number | null) => void;
 }
 
 export function HourlySmogChart({
   hourly,
   strokeColor,
   cityName,
+  onScrubPm25,
 }: HourlySmogChartProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showTable, setShowTable] = useState(false);
@@ -23,7 +27,7 @@ export function HourlySmogChart({
   const activePoint = safeHourly[activeIndex];
 
   const width = 640;
-  const height = 140;
+  const height = 136;
   const padX = 16;
   const padY = 16;
   const maxPm25 = Math.max(50, ...safeHourly.map((p) => p.pm25));
@@ -50,8 +54,16 @@ export function HourlySmogChart({
   const whoLineY =
     height - padY - Math.min(1, 15 / maxPm25) * (height - padY * 2);
 
+  function selectHour(idx: number) {
+    setSelectedIndex(idx);
+    const pt = safeHourly[idx];
+    if (pt && onScrubPm25) {
+      onScrubPm25(pt.pm25);
+    }
+  }
+
   return (
-    <div className="mt-4 rounded-lg border border-[#E5E0D5] bg-[#F6F4EF] p-3">
+    <div className="mt-4 rounded-xl border border-[#E5E0D5] bg-[#F6F4EF]/90 p-3.5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <span className="font-mono text-[10px] font-semibold tracking-wider text-[#52525B]">
@@ -69,15 +81,15 @@ export function HourlySmogChart({
           )}
         </div>
 
-        <button
-          type="button"
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => setShowTable((prev) => !prev)}
           aria-expanded={showTable}
-          className="inline-flex items-center gap-1.5 rounded-md border border-[#D8D2C5] bg-[#FCFBF8] px-2.5 py-1 text-xs font-medium text-[#18181B] hover:bg-[#ECE8DF]"
         >
           <Table2 className="h-3.5 w-3.5 text-[#0F6E6E]" aria-hidden="true" />
           <span>{showTable ? "Chart View" : "24h Table View"}</span>
-        </button>
+        </Button>
       </div>
 
       {!showTable ? (
@@ -85,7 +97,7 @@ export function HourlySmogChart({
           <svg
             viewBox={`0 0 ${width} ${height}`}
             aria-hidden="true"
-            className="h-36 w-full overflow-visible"
+            className="h-32 w-full overflow-visible"
           >
             <line
               x1={padX}
@@ -108,7 +120,7 @@ export function HourlySmogChart({
             </text>
 
             {areaPath && (
-              <path d={areaPath} fill={strokeColor} opacity="0.12" />
+              <path d={areaPath} fill={strokeColor} opacity="0.13" />
             )}
             {linePath && (
               <path
@@ -132,9 +144,9 @@ export function HourlySmogChart({
                   fill={isSelected ? "#0F6E6E" : strokeColor}
                   stroke="#FCFBF8"
                   strokeWidth="1.5"
-                  onMouseEnter={() => setSelectedIndex(idx)}
-                  onClick={() => setSelectedIndex(idx)}
-                  className="cursor-pointer"
+                  onMouseEnter={() => selectHour(idx)}
+                  onClick={() => selectHour(idx)}
+                  className="cursor-pointer transition-all"
                 />
               );
             })}
@@ -142,31 +154,30 @@ export function HourlySmogChart({
 
           {safeHourly.length > 1 && (
             <div className="mt-1.5 flex items-center gap-3">
-              <label
-                htmlFor="hourly-scrubber"
+              <span
+                id="hourly-scrubber-label"
                 className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-[#52525B]"
               >
                 Inspect Hour
-              </label>
-              <input
+              </span>
+              <Slider
                 id="hourly-scrubber"
-                type="range"
                 min={0}
                 max={safeHourly.length - 1}
                 step={1}
                 value={activeIndex}
-                aria-valuetext={
+                onValueChange={selectHour}
+                ariaLabelledBy="hourly-scrubber-label"
+                ariaValueText={
                   activePoint
                     ? `${activePoint.hourLabel}, PM2.5 ${activePoint.pm25} micrograms per cubic meter, US AQI ${activePoint.usAqi}`
                     : undefined
                 }
-                onChange={(e) => setSelectedIndex(Number(e.target.value))}
-                className="w-full accent-[#0F6E6E]"
               />
             </div>
           )}
 
-          <div className="mt-1 flex justify-between font-mono text-[10px] tabular-nums text-[#52525B]">
+          <div className="mt-0.5 flex justify-between font-mono text-[10px] tabular-nums text-[#52525B]">
             <span>{safeHourly[0]?.hourLabel ?? "00:00"}</span>
             <span>
               {safeHourly[Math.floor(safeHourly.length / 2)]?.hourLabel ?? "12:00"}

@@ -2,6 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Compass, MapPin, RotateCcw, Search, Sparkles, Wind } from "lucide-react";
+import { ShinyText } from "@/components/reactbits/ShinyText";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { CITY_PRESETS } from "@/lib/air-quality/presets";
 import type { AirQualitySnapshot, LocationInfo } from "@/lib/schemas";
 
@@ -101,7 +104,7 @@ export function TopTelemetryRail({
   const { location } = airQuality;
 
   return (
-    <header className="border-b border-[#D8D2C5] bg-[#FCFBF8]/90 px-4 py-3 sm:px-6">
+    <header className="border-b border-[#D8D2C5] bg-[#FCFBF8]/92 px-4 py-3 sm:px-6">
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         {/* Brand + Telemetry Coordinates */}
         <div className="flex flex-wrap items-center gap-3">
@@ -114,16 +117,16 @@ export function TopTelemetryRail({
                 <span className="text-base font-bold tracking-tight text-[#18181B]">
                   ClearDay
                 </span>
-                <span className="rounded border border-[#D8D2C5] bg-[#ECE8DF] px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase tracking-wider text-[#52525B]">
-                  WINTER SMOG BRIEF
-                </span>
+                <Badge tone="neutral">WINTER SMOG BRIEF</Badge>
               </div>
               <p className="font-mono text-[11px] tabular-nums text-[#52525B]">
                 {Math.abs(location.latitude).toFixed(2)}°
                 {location.latitude >= 0 ? "N" : "S"},{" "}
                 {Math.abs(location.longitude).toFixed(2)}°
                 {location.longitude >= 0 ? "E" : "W"} ·{" "}
-                {airQuality.source === "open-meteo" ? "OPEN-METEO LIVE" : "OFFLINE SNAPSHOT"}
+                {airQuality.source === "open-meteo"
+                  ? "OPEN-METEO LIVE"
+                  : "OFFLINE SNAPSHOT"}
               </p>
             </div>
           </div>
@@ -153,7 +156,7 @@ export function TopTelemetryRail({
                   ? "city-search-listbox"
                   : undefined
               }
-              className="w-full rounded-lg border border-[#D8D2C5] bg-[#F6F4EF] py-1.5 pl-8 pr-3 text-xs text-[#18181B] placeholder:text-[#71717A] shadow-beautiful-sm focus:border-[#0F6E6E]"
+              className="h-8 w-full rounded-lg border border-[#D8D2C5] bg-[#F6F4EF] pl-8 pr-3 text-xs text-[#18181B] placeholder:text-[#71717A] shadow-beautiful-sm focus:border-[#0F6E6E]"
             />
 
             {dropdownOpen && (
@@ -183,7 +186,7 @@ export function TopTelemetryRail({
                         setQuery("");
                         setDropdownOpen(false);
                       }}
-                      className="flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-xs text-[#18181B] hover:bg-[#ECE8DF]"
+                      className="flex w-full cursor-pointer items-center justify-between rounded-md px-2.5 py-1.5 text-left text-xs text-[#18181B] hover:bg-[#ECE8DF]"
                     >
                       <span className="font-medium">
                         {item.name}, {item.country}
@@ -198,36 +201,35 @@ export function TopTelemetryRail({
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={handleUseGeolocation}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-[#D8D2C5] bg-[#F6F4EF] px-2.5 py-1.5 text-xs font-medium text-[#18181B] shadow-beautiful-sm hover:bg-[#ECE8DF]"
-          >
+          <Button variant="paper" onClick={handleUseGeolocation}>
             <Compass className="h-3.5 w-3.5 text-[#0F6E6E]" aria-hidden="true" />
             <span>Use GPS</span>
-          </button>
+          </Button>
 
           <span
-            className="inline-flex items-center gap-1.5 rounded-lg border border-[#D8D2C5] bg-[#ECE8DF] px-2.5 py-1.5 font-mono text-[11px] font-medium text-[#18181B]"
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#D8D2C5] bg-[#ECE8DF] px-2.5 font-mono text-[11px] font-medium text-[#18181B]"
             title={
               aiMode === "gemini"
-                ? "Powered by live Google Gemini Flash"
-                : "Running deterministic guided offline intelligence (add GEMINI_API_KEY for live Gemini)"
+                ? "Powered by live Google Gemini"
+                : "Running deterministic guided offline intelligence"
             }
           >
             <Sparkles className="h-3 w-3 text-[#0F6E6E]" aria-hidden="true" />
-            <span>{aiMode === "gemini" ? "GEMINI LIVE" : "GUIDED OFFLINE"}</span>
+            {aiMode === "gemini" ? (
+              <ShinyText text="GEMINI LIVE" />
+            ) : (
+              <span>GUIDED OFFLINE</span>
+            )}
           </span>
 
-          <button
-            type="button"
+          <Button
+            variant="outline"
             onClick={onResetAll}
-            className="inline-flex items-center gap-1 rounded-lg border border-[#D8D2C5] bg-[#FCFBF8] px-2.5 py-1.5 text-xs font-medium text-[#52525B] hover:bg-[#ECE8DF] hover:text-[#18181B]"
             title="Reset profile and adopted actions"
           >
             <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
             <span>Reset</span>
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -241,20 +243,16 @@ export function TopTelemetryRail({
           const isActive =
             preset.location.name.toLowerCase() === location.name.toLowerCase();
           return (
-            <button
+            <Button
               key={preset.id}
-              type="button"
+              variant={isActive ? "default" : "paper"}
+              size="sm"
               disabled={isLoadingAir}
               onClick={() => onSelectLocation(preset.location)}
               aria-pressed={isActive}
-              className={
-                isActive
-                  ? "rounded-md border border-[#0F6E6E] bg-[#0F6E6E] px-2.5 py-1 text-xs font-semibold text-[#FCFBF8] shadow-beautiful-sm"
-                  : "rounded-md border border-[#D8D2C5] bg-[#F6F4EF] px-2.5 py-1 text-xs font-medium text-[#3F3F46] hover:bg-[#ECE8DF]"
-              }
             >
               {preset.location.name}
-            </button>
+            </Button>
           );
         })}
         {geoMessage && (

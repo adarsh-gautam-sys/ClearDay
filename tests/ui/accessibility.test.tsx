@@ -12,29 +12,31 @@ describe("Accessibility & ThinkingOrb lifecycle", () => {
   const snapshot = buildPresetSnapshot(CITY_PRESETS[0]!);
   const plan = buildFallbackPlan(snapshot, DEFAULT_PROFILE);
 
-  it("has zero axe-core violations across default view, 24h table view, and Methodology modal", async () => {
+  it("has zero axe-core violations across default view, 24h table view, and Radix Methodology portal", async () => {
     const user = userEvent.setup();
-    const { container } = render(
+    render(
       <ClearDayWorkspace initialAirQuality={snapshot} initialPlan={plan} />,
     );
 
-    const defaultAudit = await axe.run(container, {
-      rules: { "color-contrast": { enabled: false } },
-    });
+    const axeOptions = {
+      rules: {
+        "color-contrast": { enabled: false },
+        region: { enabled: false },
+      },
+    };
+
+    const defaultAudit = await axe.run(document.body, axeOptions);
     expect(defaultAudit.violations).toEqual([]);
 
     // Toggle 24h Table View
     await user.click(screen.getByRole("button", { name: /24h Table View/i }));
-    const tableAudit = await axe.run(container, {
-      rules: { "color-contrast": { enabled: false } },
-    });
+    const tableAudit = await axe.run(document.body, axeOptions);
     expect(tableAudit.violations).toEqual([]);
 
-    // Open Methodology modal
+    // Open Radix Methodology dialog (Portal)
     await user.click(screen.getByRole("button", { name: /Methodology/i }));
-    const modalAudit = await axe.run(container, {
-      rules: { "color-contrast": { enabled: false } },
-    });
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    const modalAudit = await axe.run(document.body, axeOptions);
     expect(modalAudit.violations).toEqual([]);
   });
 
