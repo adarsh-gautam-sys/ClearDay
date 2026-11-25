@@ -46,9 +46,11 @@ export function HourlySmogChart({
     .map((c, idx) => `${idx === 0 ? "M" : "L"} ${c.x.toFixed(1)} ${c.y.toFixed(1)}`)
     .join(" ");
 
+  const firstCoord = coords[0];
+  const lastCoord = coords[coords.length - 1];
   const areaPath =
-    coords.length > 0
-      ? `${linePath} L ${coords[coords.length - 1]!.x.toFixed(1)} ${height - padY} L ${coords[0]!.x.toFixed(1)} ${height - padY} Z`
+    firstCoord && lastCoord
+      ? `${linePath} L ${lastCoord.x.toFixed(1)} ${height - padY} L ${firstCoord.x.toFixed(1)} ${height - padY} Z`
       : "";
 
   const whoLineY =

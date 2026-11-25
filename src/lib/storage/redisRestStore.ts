@@ -3,6 +3,11 @@ import {
   MAX_CACHE_ENTRY_BYTES,
   type WindowCheckResult,
 } from "./types";
+import {
+  computeFixedWindow,
+  createRateLimitedWarner,
+  utf8ByteLength,
+} from "./utils";
 
 interface RedisRestOptions {
   url: string;
@@ -24,7 +29,7 @@ export class RedisRestStore implements DistributedStore {
   private readonly baseUrl: string;
   private readonly token: string;
   private readonly timeoutMs: number;
-  private lastWarnAt = 0;
+  private readonly warn = createRateLimitedWarner("RedisRestStore");
 
   constructor(options: RedisRestOptions) {
     this.baseUrl = options.url.replace(/\/+$/, "");
@@ -52,8 +57,7 @@ export class RedisRestStore implements DistributedStore {
   async setJson<T>(key: string, value: T, ttlSec: number): Promise<void> {
     if (ttlSec <= 0) return;
     const serialized = JSON.stringify(value);
-    const bytes = new TextEncoder().encode(serialized).byteLength;
-    if (bytes > MAX_CACHE_ENTRY_BYTES) return;
+    if (utf8ByteLength(serialized) > MAX_CACHE_ENTRY_BYTES) return;
 
     await this.pipeline([["SET", key, serialized, "EX", String(Math.ceil(ttlSec))]]);
   }
@@ -63,11 +67,8 @@ export class RedisRestStore implements DistributedStore {
     windowSec: number,
     now = Date.now(),
   ): Promise<WindowCheckResult> {
-    const windowMs = Math.max(1000, windowSec * 1000);
-    const bucketId = Math.floor(now / windowMs);
+    const { bucketId, retryAfterSec } = computeFixedWindow(windowSec, now);
     const bucketKey = `rl:${key}:${bucketId}`;
-    const expiresAt = (bucketId + 1) * windowMs;
-    const retryAfterSec = Math.max(1, Math.ceil((expiresAt - now) / 1000));
 
     const items = await this.pipeline([
       ["INCR", bucketKey],
@@ -98,22 +99,15 @@ export class RedisRestStore implements DistributedStore {
       });
 
       if (!res.ok) {
-        this.warnOncePerMinute("pipeline", `HTTP ${res.status}`);
+        this.warn("pipeline", `HTTP ${res.status}`);
         return null;
       }
       const json = (await res.json()) as unknown;
       return Array.isArray(json) ? (json as PipelineItemResult[]) : null;
     } catch (err) {
       const reason = err instanceof Error ? err.message : "network_error";
-      this.warnOncePerMinute("pipeline", reason);
+      this.warn("pipeline", reason);
       return null;
     }
-  }
-
-  private warnOncePerMinute(op: string, detail: string): void {
-    const now = Date.now();
-    if (now - this.lastWarnAt < 60_000) return;
-    this.lastWarnAt = now;
-    console.warn(`[ClearDay][RedisRestStore] ${op} failed: ${detail}`);
   }
 }

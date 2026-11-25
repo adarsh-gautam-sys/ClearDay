@@ -12,7 +12,7 @@ describe("Accessibility & ThinkingOrb lifecycle", () => {
   const snapshot = buildPresetSnapshot(CITY_PRESETS[0]!);
   const plan = buildFallbackPlan(snapshot, DEFAULT_PROFILE);
 
-  it("has zero axe-core violations across default view, 24h table view, and Radix Methodology portal", async () => {
+  it("has zero axe-core violations (including landmark regions) across workspace views and Radix portal", async () => {
     const user = userEvent.setup();
     render(
       <ClearDayWorkspace initialAirQuality={snapshot} initialPlan={plan} />,
@@ -20,13 +20,18 @@ describe("Accessibility & ThinkingOrb lifecycle", () => {
 
     const axeOptions = {
       rules: {
+        // jsdom does not compute visual CSS background/foreground contrast
         "color-contrast": { enabled: false },
-        region: { enabled: false },
       },
     };
 
     const defaultAudit = await axe.run(document.body, axeOptions);
     expect(defaultAudit.violations).toEqual([]);
+
+    // Switch to 03 Sustainable Swaps tab (verifies live tabpanel landmarks)
+    await user.click(screen.getByRole("tab", { name: /Sustainable Swaps/i }));
+    const swapsAudit = await axe.run(document.body, axeOptions);
+    expect(swapsAudit.violations).toEqual([]);
 
     // Toggle 24h Table View
     await user.click(screen.getByRole("button", { name: /24h Table View/i }));
@@ -38,7 +43,7 @@ describe("Accessibility & ThinkingOrb lifecycle", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     const modalAudit = await axe.run(document.body, axeOptions);
     expect(modalAudit.violations).toEqual([]);
-  });
+  }, 15_000);
 
   it("mounts ThinkingOrb live status during active phases and unmounts when idle or done", () => {
     const { rerender } = render(

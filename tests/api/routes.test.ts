@@ -234,4 +234,61 @@ describe("API Route Handlers", () => {
       data: { ok: true },
     });
   });
+
+  it("validates search queries, enforces Content-Type 415, and rate-limits health probes", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          results: [
+            {
+              name: "New Delhi",
+              country: "India",
+              latitude: 28.6139,
+              longitude: 77.209,
+              timezone: "Asia/Kolkata",
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const searchRes = await getAirQuality(
+      new Request("http://localhost/api/air-quality?q=Delhi"),
+    );
+    expect(searchRes.status).toBe(200);
+    const searchJson = (await searchRes.json()) as {
+      results: Array<{ name: string }>;
+    };
+    expect(searchJson.results[0]?.name).toBe("New Delhi");
+
+    const tooLongQuery = await getAirQuality(
+      new Request(`http://localhost/api/air-quality?q=${"a".repeat(81)}`),
+    );
+    expect(tooLongQuery.status).toBe(400);
+
+    const wrongMime = await postChat(
+      new Request("http://localhost/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: "hi",
+      }),
+    );
+    expect(wrongMime.status).toBe(415);
+
+    for (let i = 0; i < 10; i++) {
+      const okProbe = await getHealth(
+        new Request("http://localhost/api/health?probe=1", {
+          headers: { "x-forwarded-for": "198.51.100.4" },
+        }),
+      );
+      expect(okProbe.status).toBe(200);
+    }
+    const throttledProbe = await getHealth(
+      new Request("http://localhost/api/health?probe=1", {
+        headers: { "x-forwarded-for": "198.51.100.4" },
+      }),
+    );
+    expect(throttledProbe.status).toBe(429);
+  });
 });

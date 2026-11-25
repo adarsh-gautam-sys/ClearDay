@@ -4,27 +4,25 @@ import { generateActionPlan, hasGeminiKey } from "@/lib/ai/gemini";
 import { type ActionPlanResponse, PlanRequestSchema } from "@/lib/schemas";
 import {
   DEFAULT_MAX_JSON_BYTES,
+  enforceRateLimit,
   formatValidationErrors,
   readBoundedJson,
 } from "@/lib/security/http";
-import { checkRateLimit, getClientIp } from "@/lib/security/rateLimit";
 import { getDistributedStore } from "@/lib/storage/distributedStore";
 
 const PLAN_TTL_SEC = 15 * 60;
 
 export async function POST(request: Request) {
-  const ip = getClientIp(request);
   const store = getDistributedStore();
-  const limit = await checkRateLimit(`${ip}:/api/plan`, 15, 60, store);
-  if (!limit.allowed) {
-    return NextResponse.json(
-      { error: "Rate limit exceeded for action plan generation." },
-      {
-        status: 429,
-        headers: { "Retry-After": String(limit.retryAfterSec) },
-      },
-    );
-  }
+  const rateLimitResponse = await enforceRateLimit(
+    request,
+    "/api/plan",
+    15,
+    60,
+    "Rate limit exceeded for action plan generation.",
+    store,
+  );
+  if (rateLimitResponse) return rateLimitResponse;
 
   const bodyResult = await readBoundedJson(request, DEFAULT_MAX_JSON_BYTES);
   if (!bodyResult.ok) {
@@ -54,7 +52,7 @@ export async function POST(request: Request) {
     profile,
     ai: hasGeminiKey() ? "gemini" : "fallback",
   });
-  const cacheKey = `plan:v1:${createHash("sha256").update(rawKey).digest("hex").slice(0, 32)}`;
+  const cacheKey = `plan:v2:${createHash("sha256").update(rawKey).digest("hex").slice(0, 32)}`;
 
   const cached = await store.getJson<ActionPlanResponse>(cacheKey);
   if (cached) {

@@ -144,7 +144,7 @@ export function ActionPlanTabs({
               subtitle={`REPLACES: ${swap.replaces.toUpperCase()}`}
               detail={swap.detail}
               communityAngle={swap.communityAngle}
-              whyItHelps="Cuts source emissions before winter inversion caps trap exhaust at neighborhood height."
+              whyItHelps={swap.whyItHelps}
               impactCategory={swap.impactCategory}
               costTier={swap.costTier}
               adopted={adoptedIds.includes(swap.id)}

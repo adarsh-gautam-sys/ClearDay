@@ -4,25 +4,23 @@ import { detectRespiratoryEmergency } from "@/lib/ai/safety";
 import { ChatRequestSchema } from "@/lib/schemas";
 import {
   DEFAULT_MAX_JSON_BYTES,
+  enforceRateLimit,
   formatValidationErrors,
   readBoundedJson,
 } from "@/lib/security/http";
-import { checkRateLimit, getClientIp } from "@/lib/security/rateLimit";
 import { getDistributedStore } from "@/lib/storage/distributedStore";
 
 export async function POST(request: Request) {
-  const ip = getClientIp(request);
   const store = getDistributedStore();
-  const limit = await checkRateLimit(`${ip}:/api/chat`, 20, 60, store);
-  if (!limit.allowed) {
-    return NextResponse.json(
-      { error: "Too many Copilot questions. Please wait a minute." },
-      {
-        status: 429,
-        headers: { "Retry-After": String(limit.retryAfterSec) },
-      },
-    );
-  }
+  const rateLimitResponse = await enforceRateLimit(
+    request,
+    "/api/chat",
+    20,
+    60,
+    "Too many Copilot questions. Please wait a minute.",
+    store,
+  );
+  if (rateLimitResponse) return rateLimitResponse;
 
   const bodyResult = await readBoundedJson(request, DEFAULT_MAX_JSON_BYTES);
   if (!bodyResult.ok) {
@@ -47,6 +45,7 @@ export async function POST(request: Request) {
   const { stream, mode } = await streamCopilotReply({
     ...parsed.data,
     medicalAlert: emergency.isEmergency,
+    signal: request.signal,
   });
 
   return new Response(stream, {

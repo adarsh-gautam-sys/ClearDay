@@ -150,6 +150,7 @@ export const SustainableSwapSchema = z.object({
   title: z.string().min(1).max(120),
   replaces: z.string().min(1).max(100),
   detail: z.string().min(1).max(380),
+  whyItHelps: z.string().min(1).max(280),
   communityAngle: z.string().min(1).max(240),
   impactCategory: ImpactCategorySchema,
   costTier: CostTierSchema,

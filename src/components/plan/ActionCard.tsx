@@ -70,7 +70,7 @@ export function ActionCard({
           <div className="min-w-0 flex-1">
             {/* Top Mono Metadata Row */}
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-[11px] font-medium text-[#71717A]">
+              <span className="font-mono text-[11px] font-medium text-[#52525B]">
                 {marker}
               </span>
               <span className="font-mono text-[11px] font-medium text-[#0F6E6E]">

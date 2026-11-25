@@ -3,6 +3,7 @@ import {
   MAX_CACHE_ENTRY_BYTES,
   type WindowCheckResult,
 } from "./types";
+import { computeFixedWindow, utf8ByteLength } from "./utils";
 
 interface MemoryEntry {
   json: string;
@@ -60,7 +61,7 @@ export class ByteBoundedMemoryStore implements DistributedStore {
     now = Date.now(),
   ): Promise<void> {
     const json = JSON.stringify(value);
-    const bytes = new TextEncoder().encode(json).byteLength;
+    const bytes = utf8ByteLength(json);
 
     if (bytes > MAX_CACHE_ENTRY_BYTES || bytes > this.maxBytes || ttlSec <= 0) {
       return;
@@ -98,10 +99,9 @@ export class ByteBoundedMemoryStore implements DistributedStore {
     windowSec: number,
     now = Date.now(),
   ): Promise<WindowCheckResult> {
-    const windowMs = Math.max(1000, windowSec * 1000);
-    const bucketId = Math.floor(now / windowMs);
+    const { bucketId, expiresAtMs: expiresAt, retryAfterSec } =
+      computeFixedWindow(windowSec, now);
     const bucketKey = `${key}:${bucketId}`;
-    const expiresAt = (bucketId + 1) * windowMs;
 
     const current = this.windows.get(bucketKey);
     const nextCount = current && now < current.expiresAt ? current.count + 1 : 1;
@@ -111,10 +111,7 @@ export class ByteBoundedMemoryStore implements DistributedStore {
       this.pruneExpiredWindows(now);
     }
 
-    return {
-      count: nextCount,
-      retryAfterSec: Math.max(1, Math.ceil((expiresAt - now) / 1000)),
-    };
+    return { count: nextCount, retryAfterSec };
   }
 
   async ping(): Promise<boolean> {

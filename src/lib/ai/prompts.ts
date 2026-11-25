@@ -34,8 +34,8 @@ Create a tailored winter-smog action plan with:
 - headline: 1 crisp sentence summarizing today's smog strategy for this city and household.
 - mode: "gemini"
 - routine: 4 or 5 chronological steps referencing today's exact windows (${airQuality.windows.bestVentilation.startLabel}-${airQuality.windows.bestVentilation.endLabel} and ${airQuality.windows.peakHazard.startLabel}-${airQuality.windows.peakHazard.endLabel}).
-- indoorHacks: 4 actionable hacks across free/budget/upgrade tiers tailored to purifier=${profile.purifier}, cooking=${profile.cookingFuel}, heating=${profile.heating}.
-- sustainableAlternatives: 4 realistic swaps tailored to commute=${profile.commute} and heating/cooking, including communityAngle.
+- indoorHacks: 4 actionable hacks across free/budget/upgrade tiers tailored to purifier=${profile.purifier}, cooking=${profile.cookingFuel}, heating=${profile.heating}, each with specific whyItHelps.
+- sustainableAlternatives: 4 realistic swaps tailored to commute=${profile.commute} and heating/cooking, each with swap-specific whyItHelps explaining direct exposure/emission reduction and communityAngle.
 - communityAdvisoryDraft: <=380 chars plain-text message ready to share with a neighborhood or school WhatsApp group.`;
 
   return { systemInstruction, userPrompt };

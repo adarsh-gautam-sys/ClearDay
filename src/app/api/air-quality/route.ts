@@ -2,26 +2,23 @@ import { NextResponse } from "next/server";
 import { fetchAirQuality, searchCities } from "@/lib/air-quality/openMeteo";
 import { findPresetById } from "@/lib/air-quality/presets";
 import { CoordinateQuerySchema } from "@/lib/schemas";
-import { formatValidationErrors } from "@/lib/security/http";
-import { checkRateLimit, getClientIp } from "@/lib/security/rateLimit";
+import { enforceRateLimit, formatValidationErrors } from "@/lib/security/http";
 import { getDistributedStore } from "@/lib/storage/distributedStore";
 
 const EDGE_CACHE_HEADER =
   "public, max-age=180, s-maxage=600, stale-while-revalidate=900";
 
 export async function GET(request: Request) {
-  const ip = getClientIp(request);
   const store = getDistributedStore();
-  const limit = await checkRateLimit(`${ip}:/api/air-quality`, 60, 60, store);
-  if (!limit.allowed) {
-    return NextResponse.json(
-      { error: "Too many air quality requests. Please retry shortly." },
-      {
-        status: 429,
-        headers: { "Retry-After": String(limit.retryAfterSec) },
-      },
-    );
-  }
+  const rateLimitResponse = await enforceRateLimit(
+    request,
+    "/api/air-quality",
+    60,
+    60,
+    "Too many air quality requests. Please retry shortly.",
+    store,
+  );
+  if (rateLimitResponse) return rateLimitResponse;
 
   const { searchParams } = new URL(request.url);
   const query = searchParams.get("q");

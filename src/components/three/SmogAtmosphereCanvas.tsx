@@ -2,88 +2,20 @@
 
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
+import {
+  createSoftParticleTexture,
+  getAtmospherePalette,
+  MAX_PARTICLES,
+} from "./atmospherePalette";
 
 interface SmogAtmosphereCanvasProps {
   pm25: number;
 }
 
-const MAX_PARTICLES = 900;
-
-function getAtmospherePalette(pm25: number) {
-  if (pm25 <= 15) {
-    return {
-      topBg: "#DCEEF7",
-      bottomBg: "#F4F8FA",
-      particleHex: 0x3b7a8c,
-      hazeHex: 0x9ec6d8,
-      hazeOpacity: 0.14,
-      particleOpacity: 0.42,
-      speedScale: 0.45,
-    };
-  }
-  if (pm25 <= 55) {
-    return {
-      topBg: "#E6E4DC",
-      bottomBg: "#F5F2EA",
-      particleHex: 0x64635b,
-      hazeHex: 0xc2b9a5,
-      hazeOpacity: 0.24,
-      particleOpacity: 0.56,
-      speedScale: 0.72,
-    };
-  }
-  if (pm25 <= 150) {
-    return {
-      topBg: "#DCD0BE",
-      bottomBg: "#EFE8DC",
-      particleHex: 0x6e4e37,
-      hazeHex: 0xc29e78,
-      hazeOpacity: 0.34,
-      particleOpacity: 0.68,
-      speedScale: 0.95,
-    };
-  }
-  return {
-    topBg: "#CEB8A3",
-    bottomBg: "#E8DDD0",
-    particleHex: 0x4f3528,
-    hazeHex: 0x9e775a,
-    hazeOpacity: 0.44,
-    particleOpacity: 0.78,
-    speedScale: 1.15,
-  };
-}
-
-function createSoftParticleTexture(): THREE.CanvasTexture {
-  const size = 64;
-  const sprite = document.createElement("canvas");
-  sprite.width = size;
-  sprite.height = size;
-  const ctx = sprite.getContext("2d");
-  if (ctx) {
-    const grad = ctx.createRadialGradient(
-      size / 2,
-      size / 2,
-      1,
-      size / 2,
-      size / 2,
-      size / 2,
-    );
-    grad.addColorStop(0, "rgba(255,255,255,1)");
-    grad.addColorStop(0.45, "rgba(255,255,255,0.62)");
-    grad.addColorStop(1, "rgba(255,255,255,0)");
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, size, size);
-  }
-  const tex = new THREE.CanvasTexture(sprite);
-  tex.needsUpdate = true;
-  return tex;
-}
-
 /**
  * Interactive WebGL winter atmospheric inversion & particulate chamber.
- * Pre-allocates one static particle buffer and scales density via setDrawRange
- * for zero allocation during hour scrubbing or Outdoor/Indoor switching.
+ * Pre-allocates static buffers and reusable THREE.Color targets so 60fps
+ * animation runs with zero per-frame allocations.
  */
 export function SmogAtmosphereCanvas({ pm25 }: SmogAtmosphereCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -107,7 +39,6 @@ export function SmogAtmosphereCanvas({ pm25 }: SmogAtmosphereCanvasProps) {
       return;
     }
 
-    // Check WebGL availability cleanly before constructing Three.js WebGLRenderer
     const probeCtx =
       canvas.getContext("webgl2") ?? canvas.getContext("webgl");
     if (!probeCtx) {
@@ -163,7 +94,6 @@ export function SmogAtmosphereCanvas({ pm25 }: SmogAtmosphereCanvasProps) {
     points.frustumCulled = false;
     scene.add(points);
 
-    // Subtle volumetric inversion veil planes
     const hazeGeo = new THREE.PlaneGeometry(34, 6);
     const hazeMat = new THREE.MeshBasicMaterial({
       color: new THREE.Color(0xc29e78),
@@ -176,6 +106,10 @@ export function SmogAtmosphereCanvas({ pm25 }: SmogAtmosphereCanvasProps) {
     const hazeLower = new THREE.Mesh(hazeGeo, hazeMat);
     hazeLower.position.set(0, -1.6, -2);
     scene.add(hazeLower);
+
+    // Pre-allocated scratch colors to prevent GC pressure inside animate loop
+    const targetParticleColor = new THREE.Color();
+    const targetHazeColor = new THREE.Color();
 
     let pointerX = 0;
     let pointerY = 0;
@@ -255,9 +189,11 @@ export function SmogAtmosphereCanvas({ pm25 }: SmogAtmosphereCanvasProps) {
         Math.min(MAX_PARTICLES, Math.round(smoothedPm * 3.1)),
       );
       particleGeo.setDrawRange(0, drawCount);
-      particleMat.color.lerp(new THREE.Color(pal.particleHex), 0.08);
+      targetParticleColor.setHex(pal.particleHex);
+      targetHazeColor.setHex(pal.hazeHex);
+      particleMat.color.lerp(targetParticleColor, 0.08);
       particleMat.opacity += (pal.particleOpacity - particleMat.opacity) * 0.08;
-      hazeMat.color.lerp(new THREE.Color(pal.hazeHex), 0.08);
+      hazeMat.color.lerp(targetHazeColor, 0.08);
       hazeMat.opacity += (pal.hazeOpacity - hazeMat.opacity) * 0.08;
 
       const arr = posAttr.array as Float32Array;

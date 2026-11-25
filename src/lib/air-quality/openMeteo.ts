@@ -3,10 +3,12 @@ import {
   getDistributedStore,
   resetDistributedStore,
 } from "../storage/distributedStore";
+import { createRateLimitedWarner } from "../storage/utils";
 import { classifyUsAqi, detectSmogWindows } from "./analyzer";
 import { buildPresetSnapshot, CITY_PRESETS } from "./presets";
 
 const AQ_TTL_SEC = 15 * 60;
+const warnOpenMeteo = createRateLimitedWarner("OpenMeteo");
 
 interface GeocodingApiResult {
   name?: string;
@@ -14,6 +16,15 @@ interface GeocodingApiResult {
   admin1?: string;
   latitude?: number;
   longitude?: number;
+  timezone?: string;
+}
+
+interface ValidGeocodingResult {
+  name: string;
+  country?: string;
+  admin1?: string;
+  latitude: number;
+  longitude: number;
   timezone?: string;
 }
 
@@ -39,6 +50,17 @@ export async function clearAirQualityCache(): Promise<void> {
   await resetDistributedStore();
 }
 
+function isValidGeocodingResult(r: GeocodingApiResult): r is ValidGeocodingResult {
+  return (
+    typeof r.name === "string" &&
+    r.name.trim().length > 0 &&
+    typeof r.latitude === "number" &&
+    Number.isFinite(r.latitude) &&
+    typeof r.longitude === "number" &&
+    Number.isFinite(r.longitude)
+  );
+}
+
 export async function searchCities(query: string): Promise<LocationInfo[]> {
   const clean = query.trim();
   if (clean.length < 2) {
@@ -62,32 +84,32 @@ export async function searchCities(query: string): Promise<LocationInfo[]> {
       signal: AbortSignal.timeout(5000),
       headers: { Accept: "application/json" },
     });
-    if (!res.ok) return presetMatches;
+    if (!res.ok) {
+      warnOpenMeteo("geocoding", `HTTP ${res.status}`);
+      return presetMatches;
+    }
 
     const json = (await res.json()) as { results?: GeocodingApiResult[] };
     const remote = (json.results ?? [])
-      .filter(
-        (r) =>
-          typeof r.name === "string" &&
-          typeof r.latitude === "number" &&
-          typeof r.longitude === "number",
-      )
+      .filter(isValidGeocodingResult)
       .map((r) => ({
-        name: r.name!,
+        name: r.name,
         country: r.country ?? r.admin1 ?? "Region",
-        latitude: Math.round(r.latitude! * 10000) / 10000,
-        longitude: Math.round(r.longitude! * 10000) / 10000,
+        latitude: Math.round(r.latitude * 10000) / 10000,
+        longitude: Math.round(r.longitude * 10000) / 10000,
         timezone: r.timezone ?? "auto",
       }));
 
     return remote.length > 0 ? remote : presetMatches;
-  } catch {
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : "network_error";
+    warnOpenMeteo("geocoding", reason);
     return presetMatches;
   }
 }
 
 function findClosestPreset(location: LocationInfo) {
-  let best = CITY_PRESETS[0]!;
+  let best = CITY_PRESETS[0];
   let bestDist = Number.POSITIVE_INFINITY;
   for (const preset of CITY_PRESETS) {
     const dLat = preset.location.latitude - location.latitude;
@@ -210,8 +232,13 @@ export async function fetchAirQuality(
 
     await store.setJson(cacheKey, snapshot, AQ_TTL_SEC);
     return snapshot;
-  } catch {
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : "network_error";
+    warnOpenMeteo("telemetry", reason);
     const closest = findClosestPreset(location);
+    if (!closest) {
+      throw new Error("No fallback air quality preset configured");
+    }
     return buildPresetSnapshot({
       ...closest,
       location,

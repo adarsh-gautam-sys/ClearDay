@@ -1,4 +1,3 @@
-import { GoogleGenAI } from "@google/genai";
 import {
   ActionPlanResponseSchema,
   type ActionPlanResponse,
@@ -6,188 +5,21 @@ import {
   type ChatMessage,
   type HouseholdProfile,
 } from "../schemas";
+import { ACTION_PLAN_JSON_SCHEMA } from "./actionPlanSchema";
+import { getGenAiClient, getModelName } from "./client";
 import { buildFallbackChatReply, buildFallbackPlan } from "./fallbackPlan";
 import { buildChatPrompts, buildPlanPrompts } from "./prompts";
 import { formatSseEvent } from "./sse";
 
-export type AiProvider =
-  | "vertex-adc"
-  | "vertex-api-key"
-  | "gemini-api-key"
-  | "fallback";
-
-const IMPACT_CATEGORIES = [
-  "hepa_filtration",
-  "diy_corsi_box",
-  "draft_sealing",
-  "exhaust_cooking",
-  "no_indoor_combustion",
-  "window_timing",
-  "damp_cleaning",
-  "car_to_transit",
-  "two_wheeler_to_transit",
-  "carpool_school_run",
-  "electric_heating_swap",
-  "community_carpool",
-] as const;
-
-const COST_TIERS = ["free", "budget", "upgrade"] as const;
-
-// Standard lowercase JSON Schema works uniformly across both Vertex AI and Gemini Developer API.
-const ACTION_PLAN_JSON_SCHEMA = {
-  type: "object",
-  properties: {
-    headline: { type: "string" },
-    mode: { type: "string", enum: ["gemini", "fallback"] },
-    routine: {
-      type: "array",
-      minItems: 3,
-      maxItems: 6,
-      items: {
-        type: "object",
-        properties: {
-          id: { type: "string" },
-          timeWindow: { type: "string" },
-          title: { type: "string" },
-          detail: { type: "string" },
-          whyItHelps: { type: "string" },
-          impactCategory: { type: "string", enum: [...IMPACT_CATEGORIES] },
-          costTier: { type: "string", enum: [...COST_TIERS] },
-        },
-        required: [
-          "id",
-          "timeWindow",
-          "title",
-          "detail",
-          "whyItHelps",
-          "impactCategory",
-          "costTier",
-        ],
-      },
-    },
-    indoorHacks: {
-      type: "array",
-      minItems: 3,
-      maxItems: 5,
-      items: {
-        type: "object",
-        properties: {
-          id: { type: "string" },
-          title: { type: "string" },
-          steps: {
-            type: "array",
-            minItems: 2,
-            maxItems: 5,
-            items: { type: "string" },
-          },
-          whyItHelps: { type: "string" },
-          impactCategory: { type: "string", enum: [...IMPACT_CATEGORIES] },
-          costTier: { type: "string", enum: [...COST_TIERS] },
-          setupMinutes: { type: "integer" },
-        },
-        required: [
-          "id",
-          "title",
-          "steps",
-          "whyItHelps",
-          "impactCategory",
-          "costTier",
-          "setupMinutes",
-        ],
-      },
-    },
-    sustainableAlternatives: {
-      type: "array",
-      minItems: 3,
-      maxItems: 5,
-      items: {
-        type: "object",
-        properties: {
-          id: { type: "string" },
-          title: { type: "string" },
-          replaces: { type: "string" },
-          detail: { type: "string" },
-          communityAngle: { type: "string" },
-          impactCategory: { type: "string", enum: [...IMPACT_CATEGORIES] },
-          costTier: { type: "string", enum: [...COST_TIERS] },
-        },
-        required: [
-          "id",
-          "title",
-          "replaces",
-          "detail",
-          "communityAngle",
-          "impactCategory",
-          "costTier",
-        ],
-      },
-    },
-    communityAdvisoryDraft: { type: "string" },
-  },
-  required: [
-    "headline",
-    "mode",
-    "routine",
-    "indoorHacks",
-    "sustainableAlternatives",
-    "communityAdvisoryDraft",
-  ],
-};
+export {
+  type AiProvider,
+  getAiProvider,
+  hasGeminiKey,
+  resetGenAiClientForTests,
+} from "./client";
 
 const GEMINI_PLAN_TIMEOUT_MS = 15_000;
-
-let cachedClient: GoogleGenAI | null = null;
-let cachedClientSignature: string | null = null;
-
-export function getAiProvider(): AiProvider {
-  const useVertex = process.env.GOOGLE_GENAI_USE_VERTEXAI?.trim() === "true";
-  const vertexKey = process.env.VERTEX_API_KEY?.trim();
-  const project =
-    process.env.GOOGLE_CLOUD_PROJECT?.trim() ||
-    process.env.FIRESTORE_PROJECT_ID?.trim();
-  const geminiKey = process.env.GEMINI_API_KEY?.trim();
-
-  if (useVertex) {
-    if (vertexKey) return "vertex-api-key";
-    if (project) return "vertex-adc";
-  }
-  if (vertexKey) return "vertex-api-key";
-  if (geminiKey) return "gemini-api-key";
-  return "fallback";
-}
-
-export function hasGeminiKey(): boolean {
-  return getAiProvider() !== "fallback";
-}
-
-function getGenAiClient(): GoogleGenAI | null {
-  const provider = getAiProvider();
-  if (provider === "fallback") return null;
-
-  const project =
-    process.env.GOOGLE_CLOUD_PROJECT?.trim() ||
-    process.env.FIRESTORE_PROJECT_ID?.trim() ||
-    "";
-  const location =
-    process.env.GOOGLE_CLOUD_LOCATION?.trim() || "global";
-  const vertexKey = process.env.VERTEX_API_KEY?.trim() || "";
-  const geminiKey = process.env.GEMINI_API_KEY?.trim() || "";
-
-  const signature = `${provider}:${project}:${location}:${vertexKey.slice(0, 8)}:${geminiKey.slice(0, 8)}`;
-  if (cachedClient && cachedClientSignature === signature) {
-    return cachedClient;
-  }
-
-  if (provider === "vertex-api-key") {
-    cachedClient = new GoogleGenAI({ vertexai: true, apiKey: vertexKey });
-  } else if (provider === "vertex-adc") {
-    cachedClient = new GoogleGenAI({ vertexai: true, project, location });
-  } else {
-    cachedClient = new GoogleGenAI({ apiKey: geminiKey });
-  }
-  cachedClientSignature = signature;
-  return cachedClient;
-}
+const SSE_ENCODER = new TextEncoder();
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -207,46 +39,33 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   });
 }
 
-function getModelName(): string {
-  return process.env.GEMINI_MODEL?.trim() || "gemini-3-flash-preview";
+function encodeSse(
+  event: Parameters<typeof formatSseEvent>[0],
+): Uint8Array {
+  return SSE_ENCODER.encode(formatSseEvent(event));
 }
 
 function createSseFallbackStream(
   text: string,
   medicalAlert: boolean,
 ): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
   const words = text.split(/(?<=\s)/);
   const chunkSize = 6;
 
   return new ReadableStream<Uint8Array>({
-    async start(controller) {
-      try {
-        controller.enqueue(
-          encoder.encode(
-            formatSseEvent({
-              event: "meta",
-              data: { mode: "fallback", medicalAlert },
-            }),
-          ),
-        );
-        for (let i = 0; i < words.length; i += chunkSize) {
-          const piece = words.slice(i, i + chunkSize).join("");
-          controller.enqueue(
-            encoder.encode(
-              formatSseEvent({ event: "chunk", data: { text: piece } }),
-            ),
-          );
-        }
-        controller.enqueue(
-          encoder.encode(
-            formatSseEvent({ event: "done", data: { ok: true } }),
-          ),
-        );
-        controller.close();
-      } catch (err) {
-        controller.error(err);
+    start(controller) {
+      controller.enqueue(
+        encodeSse({
+          event: "meta",
+          data: { mode: "fallback", medicalAlert },
+        }),
+      );
+      for (let i = 0; i < words.length; i += chunkSize) {
+        const piece = words.slice(i, i + chunkSize).join("");
+        controller.enqueue(encodeSse({ event: "chunk", data: { text: piece } }));
       }
+      controller.enqueue(encodeSse({ event: "done", data: { ok: true } }));
+      controller.close();
     },
   });
 }
@@ -312,6 +131,7 @@ export async function streamCopilotReply(params: {
   history: ChatMessage[];
   message: string;
   medicalAlert?: boolean;
+  signal?: AbortSignal;
 }): Promise<{ stream: ReadableStream<Uint8Array>; mode: "gemini" | "fallback" }> {
   const medicalAlert = Boolean(params.medicalAlert);
   const ai = getGenAiClient();
@@ -336,66 +156,63 @@ export async function streamCopilotReply(params: {
       },
     });
 
-    const encoder = new TextEncoder();
+    let cancelled = false;
+    const isStopped = () => cancelled || Boolean(params.signal?.aborted);
+
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
         try {
           controller.enqueue(
-            encoder.encode(
-              formatSseEvent({
-                event: "meta",
-                data: { mode: "gemini", medicalAlert },
-              }),
-            ),
+            encodeSse({
+              event: "meta",
+              data: { mode: "gemini", medicalAlert },
+            }),
           );
 
           let emittedAny = false;
           for await (const chunk of responseStream) {
+            if (isStopped()) break;
             const text = chunk.text;
             if (text) {
               emittedAny = true;
-              controller.enqueue(
-                encoder.encode(
-                  formatSseEvent({ event: "chunk", data: { text } }),
-                ),
-              );
+              controller.enqueue(encodeSse({ event: "chunk", data: { text } }));
             }
           }
+
+          if (isStopped()) {
+            controller.close();
+            return;
+          }
+
           if (!emittedAny) {
             controller.enqueue(
-              encoder.encode(
-                formatSseEvent({
-                  event: "chunk",
-                  data: { text: buildFallbackChatReply(params) },
-                }),
-              ),
+              encodeSse({
+                event: "chunk",
+                data: { text: buildFallbackChatReply(params) },
+              }),
             );
           }
-          controller.enqueue(
-            encoder.encode(
-              formatSseEvent({ event: "done", data: { ok: true } }),
-            ),
-          );
+          controller.enqueue(encodeSse({ event: "done", data: { ok: true } }));
           controller.close();
         } catch (streamErr) {
+          if (isStopped()) {
+            return;
+          }
           const reason =
             streamErr instanceof Error ? streamErr.message : "stream_error";
           console.warn(`[ClearDay] Gemini stream interrupted: ${reason}`);
           controller.enqueue(
-            encoder.encode(
-              formatSseEvent({
-                event: "chunk",
-                data: { text: "\n\n" + buildFallbackChatReply(params) },
-              }),
-            ),
+            encodeSse({
+              event: "chunk",
+              data: { text: "\n\n" + buildFallbackChatReply(params) },
+            }),
           );
-          controller.enqueue(
-            encoder.encode(
-              formatSseEvent({ event: "done", data: { ok: true } }),
-            ),
-          );
+          controller.enqueue(encodeSse({ event: "done", data: { ok: true } }));
           controller.close();
         }
+      },
+      cancel() {
+        cancelled = true;
       },
     });
 

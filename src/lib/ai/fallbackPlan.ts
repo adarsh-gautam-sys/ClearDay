@@ -10,32 +10,12 @@ import {
 } from "../schemas";
 import { detectRespiratoryEmergency, sanitizeUserText } from "./safety";
 
-function hasVulnerability(profile: HouseholdProfile): boolean {
-  return profile.vulnerabilities.length > 0;
-}
-
-/**
- * Generates a rich, deterministic winter-smog action plan grounded in live AQI
- * telemetry and the user's household profile whenever Gemini is unconfigured
- * or unavailable.
- */
-export function buildFallbackPlan(
+function buildRoutineSteps(
   airQuality: AirQualitySnapshot,
   profile: HouseholdProfile,
-): ActionPlanResponse {
-  const { location, current, windows } = airQuality;
-  const severe = current.usAqi >= 151;
-  const sensitiveAlert = current.usAqi >= 101 || hasVulnerability(profile);
-
-  const vulnNote =
-    profile.vulnerabilities.length > 0
-      ? `Tailored for ${profile.vulnerabilities.join(", ")} sensitivity.`
-      : "Optimized for general household protection.";
-
-  const headline = severe
-    ? `${location.name} is at US AQI ${current.usAqi} (${current.categoryLabel}): keep windows sealed during ${windows.peakHazard.startLabel}–${windows.peakHazard.endLabel} inversion peaks and prioritize indoor filtration. ${vulnNote}`
-    : `${location.name} is at US AQI ${current.usAqi} (${current.categoryLabel}): target ${windows.bestVentilation.startLabel}–${windows.bestVentilation.endLabel} for low-emission errands and brief air exchange. ${vulnNote}`;
-
+  sensitiveAlert: boolean,
+): RoutineStep[] {
+  const { windows } = airQuality;
   const commuteImpact: ImpactCategory =
     profile.commute === "two_wheeler"
       ? "two_wheeler_to_transit"
@@ -60,10 +40,10 @@ export function buildFallbackPlan(
   const purifierStepCategory: ImpactCategory =
     profile.purifier === "hepa" ? "hepa_filtration" : "diy_corsi_box";
 
-  const routine: RoutineStep[] = [
+  return [
     {
       id: "routine-morning-commute",
-      timeWindow: windows.peakHazard.startLabel + "–" + windows.peakHazard.endLabel,
+      timeWindow: `${windows.peakHazard.startLabel}–${windows.peakHazard.endLabel}`,
       title: commuteTitle,
       detail: commuteDetail,
       whyItHelps:
@@ -115,31 +95,33 @@ export function buildFallbackPlan(
       costTier: profile.purifier === "hepa" ? "free" : "budget",
     },
   ];
+}
 
-  const indoorHacks: IndoorHack[] = [
+function buildIndoorHacks(profile: HouseholdProfile): IndoorHack[] {
+  const hasHepa = profile.purifier === "hepa";
+
+  return [
     {
       id: "hack-filtration-core",
-      title:
-        profile.purifier === "hepa"
-          ? "Optimize HEPA placement for overnight clean zone"
-          : "Build a $35 MERV-13 Box-Fan Air Cleaner (Corsi-style)",
-      steps:
-        profile.purifier === "hepa"
-          ? [
-              "Move purifier 30–50 cm away from walls or curtains so intake airflow is unobstructed.",
-              "Close doors to the main sleeping room so the unit maintains 4+ air changes per hour.",
-              "Run continuous low/medium fan overnight rather than noisy bursts.",
-            ]
-          : [
-              "Tape a 20×20-inch MERV-13 (or HEPA-grade) furnace filter flush against the intake side of a standard box fan.",
-              "Seal corner air gaps with painter's tape so polluted air is forced through the filter pleats.",
-              "Run on medium speed in the primary bedroom or living room with doors closed.",
-            ],
+      title: hasHepa
+        ? "Optimize HEPA placement for overnight clean zone"
+        : "Build a $35 MERV-13 Box-Fan Air Cleaner (Corsi-style)",
+      steps: hasHepa
+        ? [
+            "Move purifier 30–50 cm away from walls or curtains so intake airflow is unobstructed.",
+            "Close doors to the main sleeping room so the unit maintains 4+ air changes per hour.",
+            "Run continuous low/medium fan overnight rather than noisy bursts.",
+          ]
+        : [
+            "Tape a 20×20-inch MERV-13 (or HEPA-grade) furnace filter flush against the intake side of a standard box fan.",
+            "Seal corner air gaps with painter's tape so polluted air is forced through the filter pleats.",
+            "Run on medium speed in the primary bedroom or living room with doors closed.",
+          ],
       whyItHelps:
         "Continuous single-room filtration cuts indoor fine particulates by ~48–58% even when outdoor winter smog stays severe.",
-      impactCategory: profile.purifier === "hepa" ? "hepa_filtration" : "diy_corsi_box",
-      costTier: profile.purifier === "hepa" ? "free" : "budget",
-      setupMinutes: profile.purifier === "hepa" ? 5 : 15,
+      impactCategory: hasHepa ? "hepa_filtration" : "diy_corsi_box",
+      costTier: hasHepa ? "free" : "budget",
+      setupMinutes: hasHepa ? 5 : 15,
     },
     {
       id: "hack-draft-sealing",
@@ -184,26 +166,29 @@ export function buildFallbackPlan(
       setupMinutes: 12,
     },
   ];
+}
 
-  const sustainableAlternatives: SustainableSwap[] = [
+function buildSustainableSwaps(profile: HouseholdProfile): SustainableSwap[] {
+  const twoWheeler = profile.commute === "two_wheeler";
+  const solidHeat = profile.heating === "solid_fuel";
+
+  return [
     {
       id: "swap-mobility",
       title:
         profile.commute === "carpool"
           ? "Organize 3-household school-run carpool rotation"
           : "Replace short solo vehicle trips with metro, bus, or carpool",
-      replaces:
-        profile.commute === "two_wheeler"
-          ? "Daily solo two-wheeler commute"
-          : "Daily solo fuel-car commute",
+      replaces: twoWheeler
+        ? "Daily solo two-wheeler commute"
+        : "Daily solo fuel-car commute",
       detail:
         "Cold winter engines emit 2–3× more particulates during the first 5 km before catalytic converters warm up. Consolidation removes cold starts.",
+      whyItHelps:
+        "Removing two morning cold-start trips cuts hyper-local NO₂ and primary brake/tailpipe soot along residential streets by up to 4.1 kg CO₂e/day.",
       communityAngle:
         "Pair two neighbors on the same school or office corridor to eliminate 2 morning cold-start vehicles.",
-      impactCategory:
-        profile.commute === "two_wheeler"
-          ? "two_wheeler_to_transit"
-          : "car_to_transit",
+      impactCategory: twoWheeler ? "two_wheeler_to_transit" : "car_to_transit",
       costTier: "free",
     },
     {
@@ -212,6 +197,8 @@ export function buildFallbackPlan(
       replaces: "Curbside car idling outside schools & apartments",
       detail:
         "Ask drivers and delivery vans to switch engines off when waiting >30 seconds, especially around school gates.",
+      whyItHelps:
+        "Idling tailpipes sit directly at children's lung height during drop-off queues; engine-off zones prevent concentrated PM2.5 plumes around courtyards.",
       communityAngle:
         "Parents taking turns at the drop-off lane keeps exhaust away from children's breathing height.",
       impactCategory: "carpool_school_run",
@@ -219,22 +206,22 @@ export function buildFallbackPlan(
     },
     {
       id: "swap-heating-clean",
-      title:
-        profile.heating === "solid_fuel"
-          ? "Replace wood/coal space heaters with electric oil/heat-pump heating"
-          : "Seal rooms + lower thermostat 1.5°C with layered winter wear",
-      replaces:
-        profile.heating === "solid_fuel"
-          ? "Residential solid-fuel / biomass burning"
-          : "Unsealed high-draw winter heating",
-      detail:
-        profile.heating === "solid_fuel"
-          ? "Solid-fuel heating is one of the largest winter PM2.5 sources per household. Clean electric heat eliminates indoor and local smoke."
-          : "Draft sealing keeps warmth in longer so electric or gas heaters cycle less often, cutting grid/fuel emissions.",
+      title: solidHeat
+        ? "Replace wood/coal space heaters with electric oil/heat-pump heating"
+        : "Seal rooms + lower thermostat 1.5°C with layered winter wear",
+      replaces: solidHeat
+        ? "Residential solid-fuel / biomass burning"
+        : "Unsealed high-draw winter heating",
+      detail: solidHeat
+        ? "Solid-fuel heating is one of the largest winter PM2.5 sources per household. Clean electric heat eliminates indoor and local smoke."
+        : "Draft sealing keeps warmth in longer so electric or gas heaters cycle less often, cutting grid/fuel emissions.",
+      whyItHelps: solidHeat
+        ? "Eliminating solid-fuel combustion stops dense winter black-carbon smoke from lingering inside bedrooms and neighboring balconies (~9 g PM2.5/day avoided)."
+        : "Tighter thermal envelopes cut furnace runtime under stagnant winter air, lowering both indoor infiltration and regional peak-load emissions.",
       communityAngle:
         "Encourage building security and maintenance staff to swap outdoor bonfires for electric warmers.",
       impactCategory: "electric_heating_swap",
-      costTier: profile.heating === "solid_fuel" ? "upgrade" : "free",
+      costTier: solidHeat ? "upgrade" : "free",
     },
     {
       id: "swap-community-zero-burn",
@@ -242,21 +229,46 @@ export function buildFallbackPlan(
       replaces: "Scattered single-item deliveries & garden waste burning",
       detail:
         "Compost or bag dry winter leaves instead of burning them; smoldering piles trap dense smoke under evening inversions.",
+      whyItHelps:
+        "Open winter leaf fires release slow, wet biomass smoke that gets trapped beneath evening thermal inversions across the whole block.",
       communityAngle:
         "Coordinate a 10-home grocery/errand window and a block-wide zero-burn notice on high-AQI days.",
       impactCategory: "community_carpool",
       costTier: "free",
     },
   ];
+}
+
+/**
+ * Generates a rich, deterministic winter-smog action plan grounded in live AQI
+ * telemetry and the user's household profile whenever Gemini is unconfigured
+ * or unavailable.
+ */
+export function buildFallbackPlan(
+  airQuality: AirQualitySnapshot,
+  profile: HouseholdProfile,
+): ActionPlanResponse {
+  const { location, current, windows } = airQuality;
+  const severe = current.usAqi >= 151;
+  const sensitiveAlert = current.usAqi >= 101 || profile.vulnerabilities.length > 0;
+
+  const vulnNote =
+    profile.vulnerabilities.length > 0
+      ? `Tailored for ${profile.vulnerabilities.join(", ")} sensitivity.`
+      : "Optimized for general household protection.";
+
+  const headline = severe
+    ? `${location.name} is at US AQI ${current.usAqi} (${current.categoryLabel}): keep windows sealed during ${windows.peakHazard.startLabel}–${windows.peakHazard.endLabel} inversion peaks and prioritize indoor filtration. ${vulnNote}`
+    : `${location.name} is at US AQI ${current.usAqi} (${current.categoryLabel}): target ${windows.bestVentilation.startLabel}–${windows.bestVentilation.endLabel} for low-emission errands and brief air exchange. ${vulnNote}`;
 
   const communityAdvisoryDraft = `${location.name} Air Alert (US AQI ${current.usAqi} · ${current.categoryLabel}): Peak inversion smog hits ${windows.peakHazard.startLabel}–${windows.peakHazard.endLabel}. Please avoid outdoor exercise for kids/seniors, switch off idling engines at gates, pause leaf/trash burning, and ${windows.bestVentilation.recommended ? `ventilate briefly only ${windows.bestVentilation.startLabel}–${windows.bestVentilation.endLabel}` : "keep windows sealed & run filtration"}.`;
 
   return ActionPlanResponseSchema.parse({
     headline: headline.slice(0, 260),
     mode: "fallback",
-    routine,
-    indoorHacks,
-    sustainableAlternatives,
+    routine: buildRoutineSteps(airQuality, profile, sensitiveAlert),
+    indoorHacks: buildIndoorHacks(profile),
+    sustainableAlternatives: buildSustainableSwaps(profile),
     communityAdvisoryDraft: communityAdvisoryDraft.slice(0, 420),
   });
 }

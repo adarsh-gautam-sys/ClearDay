@@ -4,6 +4,11 @@ import {
   MAX_CACHE_ENTRY_BYTES,
   type WindowCheckResult,
 } from "./types";
+import {
+  computeFixedWindow,
+  createRateLimitedWarner,
+  utf8ByteLength,
+} from "./utils";
 
 interface FirestoreRestOptions {
   projectId: string;
@@ -41,7 +46,7 @@ export class FirestoreRestStore implements DistributedStore {
   private readonly collection: string;
   private readonly timeoutMs: number;
   private cachedToken: CachedToken | null = null;
-  private lastWarnAt = 0;
+  private readonly warn = createRateLimitedWarner("FirestoreRestStore");
 
   constructor(options: FirestoreRestOptions) {
     this.projectId = options.projectId;
@@ -52,7 +57,7 @@ export class FirestoreRestStore implements DistributedStore {
   async ping(): Promise<boolean> {
     const token = await this.getAccessToken();
     if (!token) {
-      this.warnOncePerMinute("ping", "unable to acquire metadata OAuth token");
+      this.warn("ping", "unable to acquire metadata OAuth token");
       return false;
     }
 
@@ -77,7 +82,7 @@ export class FirestoreRestStore implements DistributedStore {
       });
 
       if (!writeRes.ok) {
-        this.warnOncePerMinute("ping:write", `HTTP ${writeRes.status}`);
+        this.warn("ping:write", `HTTP ${writeRes.status}`);
         return false;
       }
 
@@ -87,7 +92,7 @@ export class FirestoreRestStore implements DistributedStore {
       });
 
       if (!readRes.ok) {
-        this.warnOncePerMinute("ping:read", `HTTP ${readRes.status}`);
+        this.warn("ping:read", `HTTP ${readRes.status}`);
         return false;
       }
 
@@ -98,7 +103,7 @@ export class FirestoreRestStore implements DistributedStore {
       return parsed.ok === true;
     } catch (err) {
       const reason = err instanceof Error ? err.message : "network_error";
-      this.warnOncePerMinute("ping", reason);
+      this.warn("ping", reason);
       return false;
     }
   }
@@ -117,7 +122,7 @@ export class FirestoreRestStore implements DistributedStore {
       });
       if (res.status === 404) return null;
       if (!res.ok) {
-        this.warnOncePerMinute("getJson", `HTTP ${res.status}`);
+        this.warn("getJson", `HTTP ${res.status}`);
         return null;
       }
 
@@ -132,7 +137,7 @@ export class FirestoreRestStore implements DistributedStore {
       return JSON.parse(payload) as T;
     } catch (err) {
       const reason = err instanceof Error ? err.message : "network_error";
-      this.warnOncePerMinute("getJson", reason);
+      this.warn("getJson", reason);
       return null;
     }
   }
@@ -140,8 +145,7 @@ export class FirestoreRestStore implements DistributedStore {
   async setJson<T>(key: string, value: T, ttlSec: number): Promise<void> {
     if (ttlSec <= 0) return;
     const serialized = JSON.stringify(value);
-    const bytes = new TextEncoder().encode(serialized).byteLength;
-    if (bytes > MAX_CACHE_ENTRY_BYTES) return;
+    if (utf8ByteLength(serialized) > MAX_CACHE_ENTRY_BYTES) return;
 
     const token = await this.getAccessToken();
     if (!token) return;
@@ -166,11 +170,11 @@ export class FirestoreRestStore implements DistributedStore {
         signal: AbortSignal.timeout(this.timeoutMs),
       });
       if (!res.ok) {
-        this.warnOncePerMinute("setJson", `HTTP ${res.status}`);
+        this.warn("setJson", `HTTP ${res.status}`);
       }
     } catch (err) {
       const reason = err instanceof Error ? err.message : "network_error";
-      this.warnOncePerMinute("setJson", reason);
+      this.warn("setJson", reason);
     }
   }
 
@@ -179,10 +183,10 @@ export class FirestoreRestStore implements DistributedStore {
     windowSec: number,
     now = Date.now(),
   ): Promise<WindowCheckResult> {
-    const windowMs = Math.max(1000, windowSec * 1000);
-    const bucketId = Math.floor(now / windowMs);
-    const expiresAtMs = (bucketId + 1) * windowMs;
-    const retryAfterSec = Math.max(1, Math.ceil((expiresAtMs - now) / 1000));
+    const { bucketId, expiresAtMs, retryAfterSec } = computeFixedWindow(
+      windowSec,
+      now,
+    );
 
     const token = await this.getAccessToken();
     if (!token) {
@@ -225,7 +229,7 @@ export class FirestoreRestStore implements DistributedStore {
       });
 
       if (!res.ok) {
-        this.warnOncePerMinute("incrementWindow", `HTTP ${res.status}`);
+        this.warn("incrementWindow", `HTTP ${res.status}`);
         return { count: 1, retryAfterSec };
       }
 
@@ -240,7 +244,7 @@ export class FirestoreRestStore implements DistributedStore {
       };
     } catch (err) {
       const reason = err instanceof Error ? err.message : "network_error";
-      this.warnOncePerMinute("incrementWindow", reason);
+      this.warn("incrementWindow", reason);
       return { count: 1, retryAfterSec };
     }
   }
@@ -252,13 +256,6 @@ export class FirestoreRestStore implements DistributedStore {
   private hashId(prefix: string, key: string): string {
     const hex = createHash("sha256").update(key).digest("hex").slice(0, 40);
     return `${prefix}_${hex}`;
-  }
-
-  private warnOncePerMinute(op: string, detail: string): void {
-    const now = Date.now();
-    if (now - this.lastWarnAt < 60_000) return;
-    this.lastWarnAt = now;
-    console.warn(`[ClearDay][FirestoreRestStore] ${op} failed: ${detail}`);
   }
 
   private async getAccessToken(): Promise<string | null> {
@@ -278,7 +275,7 @@ export class FirestoreRestStore implements DistributedStore {
         },
       );
       if (!res.ok) {
-        this.warnOncePerMinute("metadataToken", `HTTP ${res.status}`);
+        this.warn("metadataToken", `HTTP ${res.status}`);
         return null;
       }
 
@@ -296,7 +293,7 @@ export class FirestoreRestStore implements DistributedStore {
       return data.access_token;
     } catch (err) {
       const reason = err instanceof Error ? err.message : "network_error";
-      this.warnOncePerMinute("metadataToken", reason);
+      this.warn("metadataToken", reason);
       return null;
     }
   }

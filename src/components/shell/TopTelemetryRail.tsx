@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Compass, MapPin, RotateCcw, Search, Sparkles, Wind } from "lucide-react";
 import { ShinyText } from "@/components/reactbits/ShinyText";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +27,7 @@ export function TopTelemetryRail({
   const [results, setResults] = useState<LocationInfo[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
   const [geoMessage, setGeoMessage] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -35,6 +36,7 @@ export function TopTelemetryRail({
     if (trimmed.length < 2) {
       setResults([]);
       setDropdownOpen(false);
+      setActiveIndex(-1);
       return;
     }
 
@@ -48,7 +50,9 @@ export function TopTelemetryRail({
         );
         if (res.ok) {
           const data = (await res.json()) as { results?: LocationInfo[] };
-          setResults(data.results ?? []);
+          const next = data.results ?? [];
+          setResults(next);
+          setActiveIndex(next.length > 0 ? 0 : -1);
           setDropdownOpen(true);
         }
       } catch {
@@ -71,11 +75,64 @@ export function TopTelemetryRail({
         !containerRef.current.contains(event.target as Node)
       ) {
         setDropdownOpen(false);
+        setActiveIndex(-1);
       }
     }
     document.addEventListener("mousedown", handleOutsideClick);
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, []);
+
+  function commitSelection(item: LocationInfo) {
+    onSelectLocation(item);
+    setQuery("");
+    setDropdownOpen(false);
+    setActiveIndex(-1);
+  }
+
+  function handleComboboxKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (!dropdownOpen || results.length === 0) {
+      if (event.key === "ArrowDown" && results.length > 0) {
+        event.preventDefault();
+        setDropdownOpen(true);
+        setActiveIndex(0);
+      }
+      return;
+    }
+
+    switch (event.key) {
+      case "ArrowDown":
+        event.preventDefault();
+        setActiveIndex((prev) => (prev + 1) % results.length);
+        break;
+      case "ArrowUp":
+        event.preventDefault();
+        setActiveIndex((prev) =>
+          prev <= 0 ? results.length - 1 : prev - 1,
+        );
+        break;
+      case "Home":
+        event.preventDefault();
+        setActiveIndex(0);
+        break;
+      case "End":
+        event.preventDefault();
+        setActiveIndex(results.length - 1);
+        break;
+      case "Enter": {
+        const chosen = results[activeIndex] ?? results[0];
+        if (chosen) {
+          event.preventDefault();
+          commitSelection(chosen);
+        }
+        break;
+      }
+      case "Escape":
+        event.preventDefault();
+        setDropdownOpen(false);
+        setActiveIndex(-1);
+        break;
+    }
+  }
 
   function handleUseGeolocation() {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
@@ -102,6 +159,10 @@ export function TopTelemetryRail({
   }
 
   const { location } = airQuality;
+  const activeOptionId =
+    dropdownOpen && activeIndex >= 0 && results[activeIndex]
+      ? `city-option-${activeIndex}`
+      : undefined;
 
   return (
     <header className="border-b border-[#D8D2C5] bg-[#FCFBF8]/92 px-4 py-3 sm:px-6">
@@ -148,6 +209,7 @@ export function TopTelemetryRail({
               role="combobox"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={handleComboboxKeyDown}
               placeholder="Search any city (e.g. Tokyo)..."
               aria-autocomplete="list"
               aria-expanded={dropdownOpen && results.length > 0}
@@ -156,7 +218,8 @@ export function TopTelemetryRail({
                   ? "city-search-listbox"
                   : undefined
               }
-              className="h-8 w-full rounded-lg border border-[#D8D2C5] bg-[#F6F4EF] pl-8 pr-3 text-xs text-[#18181B] placeholder:text-[#71717A] shadow-beautiful-sm focus:border-[#0F6E6E]"
+              aria-activedescendant={activeOptionId}
+              className="h-8 w-full rounded-lg border border-[#D8D2C5] bg-[#F6F4EF] pl-8 pr-3 text-xs text-[#18181B] placeholder:text-[#52525B] shadow-beautiful-sm focus:border-[#0F6E6E]"
             />
 
             {dropdownOpen && (
@@ -175,27 +238,32 @@ export function TopTelemetryRail({
                     No matching cities found.
                   </p>
                 ) : (
-                  results.map((item) => (
-                    <button
-                      key={`${item.name}-${item.latitude}-${item.longitude}`}
-                      type="button"
-                      role="option"
-                      aria-selected={item.name === location.name}
-                      onClick={() => {
-                        onSelectLocation(item);
-                        setQuery("");
-                        setDropdownOpen(false);
-                      }}
-                      className="flex w-full cursor-pointer items-center justify-between rounded-md px-2.5 py-1.5 text-left text-xs text-[#18181B] hover:bg-[#ECE8DF]"
-                    >
-                      <span className="font-medium">
-                        {item.name}, {item.country}
-                      </span>
-                      <span className="font-mono text-[10px] tabular-nums text-[#52525B]">
-                        {item.latitude.toFixed(1)}, {item.longitude.toFixed(1)}
-                      </span>
-                    </button>
-                  ))
+                  results.map((item, idx) => {
+                    const isFocused = idx === activeIndex;
+                    return (
+                      <button
+                        key={`${item.name}-${item.latitude}-${item.longitude}`}
+                        id={`city-option-${idx}`}
+                        type="button"
+                        role="option"
+                        aria-selected={isFocused || item.name === location.name}
+                        onClick={() => commitSelection(item)}
+                        onMouseEnter={() => setActiveIndex(idx)}
+                        className={
+                          isFocused
+                            ? "flex w-full cursor-pointer items-center justify-between rounded-md bg-[#ECE8DF] px-2.5 py-1.5 text-left text-xs text-[#18181B]"
+                            : "flex w-full cursor-pointer items-center justify-between rounded-md px-2.5 py-1.5 text-left text-xs text-[#18181B] hover:bg-[#ECE8DF]"
+                        }
+                      >
+                        <span className="font-medium">
+                          {item.name}, {item.country}
+                        </span>
+                        <span className="font-mono text-[10px] tabular-nums text-[#52525B]">
+                          {item.latitude.toFixed(1)}, {item.longitude.toFixed(1)}
+                        </span>
+                      </button>
+                    );
+                  })
                 )}
               </div>
             )}
@@ -256,7 +324,11 @@ export function TopTelemetryRail({
           );
         })}
         {geoMessage && (
-          <span className="ml-2 font-mono text-[11px] text-[#9A3412]">
+          <span
+            role="status"
+            aria-live="polite"
+            className="ml-2 font-mono text-[11px] text-[#9A3412]"
+          >
             {geoMessage}
           </span>
         )}

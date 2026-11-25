@@ -205,7 +205,13 @@ export function SmogCopilot({
       </div>
 
       {/* Message Feed */}
-      <div className="relative mt-3 max-h-72 min-h-[140px] space-y-2.5 overflow-y-auto rounded-lg border border-[#E5E0D5] bg-[#F6F4EF] p-3">
+      <div
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions text"
+        aria-label="Smog Copilot conversation"
+        className="relative mt-3 max-h-72 min-h-[140px] space-y-2.5 overflow-y-auto rounded-lg border border-[#E5E0D5] bg-[#F6F4EF] p-3"
+      >
         {messages.length === 0 ? (
           <p className="text-xs leading-relaxed text-[#52525B]">
             Grounded in{" "}
@@ -257,7 +263,7 @@ export function SmogCopilot({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Ask about school runs, masks, DIY filters, or heating..."
-          className="h-8 min-w-0 flex-1 rounded-lg border border-[#D8D2C5] bg-[#F6F4EF] px-3 text-xs text-[#18181B] placeholder:text-[#71717A] shadow-beautiful-sm"
+          className="h-8 min-w-0 flex-1 rounded-lg border border-[#D8D2C5] bg-[#F6F4EF] px-3 text-xs text-[#18181B] placeholder:text-[#52525B] shadow-beautiful-sm"
         />
         {isBusy ? (
           <Button type="button" variant="danger" onClick={handleStop}>

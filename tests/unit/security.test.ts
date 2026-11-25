@@ -169,4 +169,39 @@ describe("HTTP & proxy security helpers", () => {
       error: "Request payload too large.",
     });
   });
+
+  it("rejects non-JSON Content-Type with 415 and enforces streaming ceiling without Content-Length", async () => {
+    const wrongType = new Request("http://localhost/api/plan", {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: "hello",
+    });
+    expect(await readBoundedJson(wrongType, 512)).toEqual({
+      ok: false,
+      status: 415,
+      error: "Content-Type must be application/json.",
+    });
+
+    const chunkedStream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const encoder = new TextEncoder();
+        controller.enqueue(encoder.encode('{"data":"'));
+        controller.enqueue(encoder.encode("b".repeat(800)));
+        controller.enqueue(encoder.encode('"}'));
+        controller.close();
+      },
+    });
+    const streamingReq = new Request("http://localhost/api/plan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: chunkedStream,
+      duplex: "half",
+    } as RequestInit);
+
+    expect(await readBoundedJson(streamingReq, 512)).toEqual({
+      ok: false,
+      status: 413,
+      error: "Request payload too large.",
+    });
+  });
 });
