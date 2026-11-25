@@ -117,6 +117,10 @@ export class ByteBoundedMemoryStore implements DistributedStore {
     };
   }
 
+  async ping(): Promise<boolean> {
+    return true;
+  }
+
   async clear(): Promise<void> {
     this.cache.clear();
     this.windows.clear();

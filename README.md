@@ -46,11 +46,20 @@ Browser UI (React 19 + Paper-Technical Split Shell)
 
 ---
 
+## Live Deployment (Google Cloud Run)
+
+- **Live URL**: https://clearday-562790399795.asia-south1.run.app
+- **GCP Project**: `clearday-air-pw6` (`asia-south1`)
+- **Health Probe**: `GET /api/health?probe=1` (verifies Cloud Firestore round-trip & Vertex AI provider status)
+- **AI Auth (`vertex-adc`)**: Keyless Cloud Run IAM (`clearday-runner` service account with `roles/aiplatform.user` + `roles/datastore.user`), using `@google/genai` with `GOOGLE_GENAI_USE_VERTEXAI=true`, `GOOGLE_CLOUD_LOCATION=global`, and `GEMINI_MODEL=gemini-3-flash-preview` (no static API keys stored). Standard GCP API keys are rejected (`401`) by `aiplatform.googleapis.com`; `VERTEX_API_KEY` is only for Vertex AI Express Mode, and `GEMINI_API_KEY` works for Gemini Developer API.
+
+---
+
 ## Quick Start & Cloud Run
 
 ```bash
 npm install
-cp .env.example .env.local   # Optional: add GEMINI_API_KEY or Redis/Firestore vars
+cp .env.example .env.local   # Optional: add GEMINI_API_KEY or Vertex/Redis/Firestore vars
 npm run dev
 ```
 
@@ -58,8 +67,8 @@ Open `http://localhost:3000`.
 
 ### Cloud Run Production Container
 Built with `output: "standalone"` and a multi-stage non-root `Dockerfile` listening on `PORT=8080`:
-- Health check endpoint: `GET /api/health`
-- Horizontal scaling: set `REDIS_REST_URL` + `REDIS_REST_TOKEN` **or** `FIRESTORE_CACHE_ENABLED=true` + `FIRESTORE_PROJECT_ID` so caching and rate-limiting share state across all Cloud Run instances.
+- Health check endpoint: `GET /api/health` (and `?probe=1` for live store verification)
+- Horizontal scaling: provisioned with Cloud Firestore (`FIRESTORE_CACHE_ENABLED=true`, native TTL on `clearday_cache.expireAt`) or optional Redis HTTP REST (`REDIS_REST_URL` + `REDIS_REST_TOKEN`).
 
 ---
 

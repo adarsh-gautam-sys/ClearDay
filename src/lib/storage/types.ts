@@ -19,6 +19,7 @@ export interface DistributedStore {
     windowSec: number,
     now?: number,
   ): Promise<WindowCheckResult>;
+  ping?(): Promise<boolean>;
   clear?(): Promise<void>;
 }
 

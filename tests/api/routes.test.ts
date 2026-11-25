@@ -7,28 +7,59 @@ import { parseSseBuffer } from "@/lib/ai/sse";
 import { clearAirQualityCache } from "@/lib/air-quality/openMeteo";
 import { buildPresetSnapshot, CITY_PRESETS } from "@/lib/air-quality/presets";
 import { ActionPlanResponseSchema, DEFAULT_PROFILE } from "@/lib/schemas";
-import { resetDistributedStore } from "@/lib/storage/distributedStore";
+import {
+  resetDistributedStore,
+  setDistributedStoreForTests,
+} from "@/lib/storage/distributedStore";
+import { ByteBoundedMemoryStore } from "@/lib/storage/memoryStore";
 
 describe("API Route Handlers", () => {
   const sampleSnapshot = buildPresetSnapshot(CITY_PRESETS[0]!);
 
   beforeEach(async () => {
+    setDistributedStoreForTests(null);
     await resetDistributedStore();
     await clearAirQualityCache();
     delete process.env.GEMINI_API_KEY;
+    delete process.env.VERTEX_API_KEY;
+    delete process.env.GOOGLE_GENAI_USE_VERTEXAI;
+    delete process.env.GOOGLE_CLOUD_PROJECT;
   });
 
   afterEach(() => {
+    setDistributedStoreForTests(null);
     vi.restoreAllMocks();
   });
 
-  it("GET /api/health reports backend store and AI readiness", async () => {
-    const res = await getHealth();
+  it("GET /api/health reports backend store, AI readiness, and optional deep store probe", async () => {
+    const res = await getHealth(new Request("http://localhost/api/health"));
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.status).toBe("ok");
     expect(json.store).toBe("memory-dev");
     expect(json.aiMode).toBe("fallback");
+
+    const healthyProbe = await getHealth(
+      new Request("http://localhost/api/health?probe=1"),
+    );
+    expect(healthyProbe.status).toBe(200);
+    expect(await healthyProbe.json()).toMatchObject({
+      status: "ok",
+      storeHealthy: true,
+    });
+
+    const degradedStore = new ByteBoundedMemoryStore();
+    degradedStore.ping = async () => false;
+    setDistributedStoreForTests(degradedStore);
+
+    const degradedProbe = await getHealth(
+      new Request("http://localhost/api/health?probe=1"),
+    );
+    expect(degradedProbe.status).toBe(503);
+    expect(await degradedProbe.json()).toMatchObject({
+      status: "degraded",
+      storeHealthy: false,
+    });
   });
 
   it("GET /api/air-quality rejects out-of-range coordinates with 400", async () => {

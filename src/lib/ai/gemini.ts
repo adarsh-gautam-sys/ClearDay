@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import {
   ActionPlanResponseSchema,
   type ActionPlanResponse,
@@ -9,6 +9,12 @@ import {
 import { buildFallbackChatReply, buildFallbackPlan } from "./fallbackPlan";
 import { buildChatPrompts, buildPlanPrompts } from "./prompts";
 import { formatSseEvent } from "./sse";
+
+export type AiProvider =
+  | "vertex-adc"
+  | "vertex-api-key"
+  | "gemini-api-key"
+  | "fallback";
 
 const IMPACT_CATEGORIES = [
   "hepa_filtration",
@@ -27,23 +33,26 @@ const IMPACT_CATEGORIES = [
 
 const COST_TIERS = ["free", "budget", "upgrade"] as const;
 
+// Standard lowercase JSON Schema works uniformly across both Vertex AI and Gemini Developer API.
 const ACTION_PLAN_JSON_SCHEMA = {
-  type: Type.OBJECT,
+  type: "object",
   properties: {
-    headline: { type: Type.STRING },
-    mode: { type: Type.STRING, enum: ["gemini", "fallback"] },
+    headline: { type: "string" },
+    mode: { type: "string", enum: ["gemini", "fallback"] },
     routine: {
-      type: Type.ARRAY,
+      type: "array",
+      minItems: 3,
+      maxItems: 6,
       items: {
-        type: Type.OBJECT,
+        type: "object",
         properties: {
-          id: { type: Type.STRING },
-          timeWindow: { type: Type.STRING },
-          title: { type: Type.STRING },
-          detail: { type: Type.STRING },
-          whyItHelps: { type: Type.STRING },
-          impactCategory: { type: Type.STRING, enum: [...IMPACT_CATEGORIES] },
-          costTier: { type: Type.STRING, enum: [...COST_TIERS] },
+          id: { type: "string" },
+          timeWindow: { type: "string" },
+          title: { type: "string" },
+          detail: { type: "string" },
+          whyItHelps: { type: "string" },
+          impactCategory: { type: "string", enum: [...IMPACT_CATEGORIES] },
+          costTier: { type: "string", enum: [...COST_TIERS] },
         },
         required: [
           "id",
@@ -57,17 +66,24 @@ const ACTION_PLAN_JSON_SCHEMA = {
       },
     },
     indoorHacks: {
-      type: Type.ARRAY,
+      type: "array",
+      minItems: 3,
+      maxItems: 5,
       items: {
-        type: Type.OBJECT,
+        type: "object",
         properties: {
-          id: { type: Type.STRING },
-          title: { type: Type.STRING },
-          steps: { type: Type.ARRAY, items: { type: Type.STRING } },
-          whyItHelps: { type: Type.STRING },
-          impactCategory: { type: Type.STRING, enum: [...IMPACT_CATEGORIES] },
-          costTier: { type: Type.STRING, enum: [...COST_TIERS] },
-          setupMinutes: { type: Type.INTEGER },
+          id: { type: "string" },
+          title: { type: "string" },
+          steps: {
+            type: "array",
+            minItems: 2,
+            maxItems: 5,
+            items: { type: "string" },
+          },
+          whyItHelps: { type: "string" },
+          impactCategory: { type: "string", enum: [...IMPACT_CATEGORIES] },
+          costTier: { type: "string", enum: [...COST_TIERS] },
+          setupMinutes: { type: "integer" },
         },
         required: [
           "id",
@@ -81,17 +97,19 @@ const ACTION_PLAN_JSON_SCHEMA = {
       },
     },
     sustainableAlternatives: {
-      type: Type.ARRAY,
+      type: "array",
+      minItems: 3,
+      maxItems: 5,
       items: {
-        type: Type.OBJECT,
+        type: "object",
         properties: {
-          id: { type: Type.STRING },
-          title: { type: Type.STRING },
-          replaces: { type: Type.STRING },
-          detail: { type: Type.STRING },
-          communityAngle: { type: Type.STRING },
-          impactCategory: { type: Type.STRING, enum: [...IMPACT_CATEGORIES] },
-          costTier: { type: Type.STRING, enum: [...COST_TIERS] },
+          id: { type: "string" },
+          title: { type: "string" },
+          replaces: { type: "string" },
+          detail: { type: "string" },
+          communityAngle: { type: "string" },
+          impactCategory: { type: "string", enum: [...IMPACT_CATEGORIES] },
+          costTier: { type: "string", enum: [...COST_TIERS] },
         },
         required: [
           "id",
@@ -104,7 +122,7 @@ const ACTION_PLAN_JSON_SCHEMA = {
         ],
       },
     },
-    communityAdvisoryDraft: { type: Type.STRING },
+    communityAdvisoryDraft: { type: "string" },
   },
   required: [
     "headline",
@@ -119,13 +137,55 @@ const ACTION_PLAN_JSON_SCHEMA = {
 const GEMINI_PLAN_TIMEOUT_MS = 15_000;
 
 let cachedClient: GoogleGenAI | null = null;
-let cachedApiKey: string | null = null;
+let cachedClientSignature: string | null = null;
 
-function getGenAiClient(apiKey: string): GoogleGenAI {
-  if (!cachedClient || cachedApiKey !== apiKey) {
-    cachedClient = new GoogleGenAI({ apiKey });
-    cachedApiKey = apiKey;
+export function getAiProvider(): AiProvider {
+  const useVertex = process.env.GOOGLE_GENAI_USE_VERTEXAI?.trim() === "true";
+  const vertexKey = process.env.VERTEX_API_KEY?.trim();
+  const project =
+    process.env.GOOGLE_CLOUD_PROJECT?.trim() ||
+    process.env.FIRESTORE_PROJECT_ID?.trim();
+  const geminiKey = process.env.GEMINI_API_KEY?.trim();
+
+  if (useVertex) {
+    if (vertexKey) return "vertex-api-key";
+    if (project) return "vertex-adc";
   }
+  if (vertexKey) return "vertex-api-key";
+  if (geminiKey) return "gemini-api-key";
+  return "fallback";
+}
+
+export function hasGeminiKey(): boolean {
+  return getAiProvider() !== "fallback";
+}
+
+function getGenAiClient(): GoogleGenAI | null {
+  const provider = getAiProvider();
+  if (provider === "fallback") return null;
+
+  const project =
+    process.env.GOOGLE_CLOUD_PROJECT?.trim() ||
+    process.env.FIRESTORE_PROJECT_ID?.trim() ||
+    "";
+  const location =
+    process.env.GOOGLE_CLOUD_LOCATION?.trim() || "global";
+  const vertexKey = process.env.VERTEX_API_KEY?.trim() || "";
+  const geminiKey = process.env.GEMINI_API_KEY?.trim() || "";
+
+  const signature = `${provider}:${project}:${location}:${vertexKey.slice(0, 8)}:${geminiKey.slice(0, 8)}`;
+  if (cachedClient && cachedClientSignature === signature) {
+    return cachedClient;
+  }
+
+  if (provider === "vertex-api-key") {
+    cachedClient = new GoogleGenAI({ vertexai: true, apiKey: vertexKey });
+  } else if (provider === "vertex-adc") {
+    cachedClient = new GoogleGenAI({ vertexai: true, project, location });
+  } else {
+    cachedClient = new GoogleGenAI({ apiKey: geminiKey });
+  }
+  cachedClientSignature = signature;
   return cachedClient;
 }
 
@@ -147,12 +207,8 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   });
 }
 
-export function hasGeminiKey(): boolean {
-  return Boolean(process.env.GEMINI_API_KEY?.trim());
-}
-
 function getModelName(): string {
-  return process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
+  return process.env.GEMINI_MODEL?.trim() || "gemini-3-flash-preview";
 }
 
 function createSseFallbackStream(
@@ -199,13 +255,12 @@ export async function generateActionPlan(
   airQuality: AirQualitySnapshot,
   profile: HouseholdProfile,
 ): Promise<ActionPlanResponse> {
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
-  if (!apiKey) {
+  const ai = getGenAiClient();
+  if (!ai) {
     return buildFallbackPlan(airQuality, profile);
   }
 
   try {
-    const ai = getGenAiClient(apiKey);
     const { systemInstruction, userPrompt } = buildPlanPrompts(
       airQuality,
       profile,
@@ -220,7 +275,8 @@ export async function generateActionPlan(
           responseMimeType: "application/json",
           responseJsonSchema: ACTION_PLAN_JSON_SCHEMA,
           temperature: 0.3,
-          maxOutputTokens: 2048,
+          maxOutputTokens: 3072,
+          thinkingConfig: { thinkingBudget: 0 },
         },
       }),
       GEMINI_PLAN_TIMEOUT_MS,
@@ -258,8 +314,8 @@ export async function streamCopilotReply(params: {
   medicalAlert?: boolean;
 }): Promise<{ stream: ReadableStream<Uint8Array>; mode: "gemini" | "fallback" }> {
   const medicalAlert = Boolean(params.medicalAlert);
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
-  if (!apiKey) {
+  const ai = getGenAiClient();
+  if (!ai) {
     const fallback = buildFallbackChatReply(params);
     return {
       stream: createSseFallbackStream(fallback, medicalAlert),
@@ -268,7 +324,6 @@ export async function streamCopilotReply(params: {
   }
 
   try {
-    const ai = getGenAiClient(apiKey);
     const { systemInstruction, contents } = buildChatPrompts(params);
     const responseStream = await ai.models.generateContentStream({
       model: getModelName(),
@@ -276,7 +331,8 @@ export async function streamCopilotReply(params: {
       config: {
         systemInstruction,
         temperature: 0.4,
-        maxOutputTokens: 700,
+        maxOutputTokens: 800,
+        thinkingConfig: { thinkingBudget: 0 },
       },
     });
 

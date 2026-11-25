@@ -75,6 +75,15 @@ describe("RedisRestStore", () => {
     fetchSpy.mockRejectedValueOnce(new Error("timeout"));
     const failOpen = await checkRateLimit("ip:/api/plan", 3, 60, store);
     expect(failOpen.allowed).toBe(true);
+
+    fetchSpy
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([{ result: "PONG" }]), { status: 200 }),
+      )
+      .mockResolvedValueOnce(new Response("unauthorized", { status: 401 }));
+
+    expect(await store.ping()).toBe(true);
+    expect(await store.ping()).toBe(false);
   });
 });
 
@@ -119,6 +128,21 @@ describe("FirestoreRestStore", () => {
     const rl = await store.incrementWindow("ip:/api/chat", 60);
     expect(rl.count).toBe(5);
     expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+    fetchSpy
+      .mockResolvedValueOnce(new Response("{}", { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            fields: { payload: { stringValue: JSON.stringify({ ok: true }) } },
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response("forbidden", { status: 403 }));
+
+    expect(await store.ping()).toBe(true);
+    expect(await store.ping()).toBe(false);
   });
 });
 

@@ -24,11 +24,17 @@ export class RedisRestStore implements DistributedStore {
   private readonly baseUrl: string;
   private readonly token: string;
   private readonly timeoutMs: number;
+  private lastWarnAt = 0;
 
   constructor(options: RedisRestOptions) {
     this.baseUrl = options.url.replace(/\/+$/, "");
     this.token = options.token;
     this.timeoutMs = options.timeoutMs ?? 1500;
+  }
+
+  async ping(): Promise<boolean> {
+    const items = await this.pipeline([["PING"]]);
+    return items?.[0]?.result === "PONG";
   }
 
   async getJson<T>(key: string): Promise<T | null> {
@@ -71,7 +77,6 @@ export class RedisRestStore implements DistributedStore {
     const rawCount = items?.[0]?.result;
     const count = typeof rawCount === "number" ? rawCount : Number(rawCount);
     if (!Number.isFinite(count) || count < 1) {
-      // Fail open on upstream store blips so users are not falsely throttled.
       return { count: 1, retryAfterSec };
     }
 
@@ -92,11 +97,23 @@ export class RedisRestStore implements DistributedStore {
         signal: AbortSignal.timeout(this.timeoutMs),
       });
 
-      if (!res.ok) return null;
+      if (!res.ok) {
+        this.warnOncePerMinute("pipeline", `HTTP ${res.status}`);
+        return null;
+      }
       const json = (await res.json()) as unknown;
       return Array.isArray(json) ? (json as PipelineItemResult[]) : null;
-    } catch {
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "network_error";
+      this.warnOncePerMinute("pipeline", reason);
       return null;
     }
+  }
+
+  private warnOncePerMinute(op: string, detail: string): void {
+    const now = Date.now();
+    if (now - this.lastWarnAt < 60_000) return;
+    this.lastWarnAt = now;
+    console.warn(`[ClearDay][RedisRestStore] ${op} failed: ${detail}`);
   }
 }

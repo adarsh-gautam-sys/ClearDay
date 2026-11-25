@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { buildFallbackPlan } from "@/lib/ai/fallbackPlan";
+import { getAiProvider } from "@/lib/ai/gemini";
 import {
   detectRespiratoryEmergency,
   escapePromptDelimiters,
@@ -7,6 +8,34 @@ import {
 } from "@/lib/ai/safety";
 import { buildPresetSnapshot, CITY_PRESETS } from "@/lib/air-quality/presets";
 import { ActionPlanResponseSchema, DEFAULT_PROFILE } from "@/lib/schemas";
+
+describe("AI provider resolution", () => {
+  afterEach(() => {
+    delete process.env.GOOGLE_GENAI_USE_VERTEXAI;
+    delete process.env.GOOGLE_CLOUD_PROJECT;
+    delete process.env.VERTEX_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+  });
+
+  it("resolves vertex-adc, vertex-api-key, gemini-api-key, and fallback cleanly", () => {
+    delete process.env.GOOGLE_GENAI_USE_VERTEXAI;
+    delete process.env.GOOGLE_CLOUD_PROJECT;
+    delete process.env.VERTEX_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    expect(getAiProvider()).toBe("fallback");
+
+    process.env.GEMINI_API_KEY = "AIza-dev";
+    expect(getAiProvider()).toBe("gemini-api-key");
+
+    process.env.VERTEX_API_KEY = "AQ-vertex";
+    expect(getAiProvider()).toBe("vertex-api-key");
+
+    delete process.env.VERTEX_API_KEY;
+    process.env.GOOGLE_GENAI_USE_VERTEXAI = "true";
+    process.env.GOOGLE_CLOUD_PROJECT = "clearday-air-pw6";
+    expect(getAiProvider()).toBe("vertex-adc");
+  });
+});
 
 describe("safety & fallback plan", () => {
   it("strips control characters and caps length cleanly", () => {
