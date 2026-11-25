@@ -1,73 +1,54 @@
+import { getDistributedStore } from "../storage/distributedStore";
+import type { DistributedStore } from "../storage/types";
+
 export interface RateLimitResult {
   allowed: boolean;
   remaining: number;
   retryAfterSec: number;
 }
 
+const SAFE_IP_PATTERN = /^[0-9a-fA-F:.]{2,64}$/;
+
 /**
- * In-memory sliding-window rate limiter keyed by client IP and route prefix.
- * shortcut: single-process memory store; upgrade to Redis/Upstash if horizontally scaled.
+ * Distributed fixed-window rate limiter backed by Redis REST, Cloud Firestore,
+ * or byte-bounded memory store in local development.
  */
-export class SlidingWindowRateLimiter {
-  private readonly hits = new Map<string, number[]>();
-  private readonly maxKeys = 5000;
+export async function checkRateLimit(
+  key: string,
+  maxRequests: number,
+  windowSec: number,
+  store: DistributedStore = getDistributedStore(),
+): Promise<RateLimitResult> {
+  const result = await store.incrementWindow(key, windowSec);
+  const allowed = result.count <= maxRequests;
 
-  constructor(
-    private readonly maxRequests: number,
-    private readonly windowMs: number,
-  ) {}
-
-  check(key: string, now = Date.now()): RateLimitResult {
-    const cutoff = now - this.windowMs;
-    const existing = (this.hits.get(key) ?? []).filter((ts) => ts > cutoff);
-
-    if (existing.length >= this.maxRequests) {
-      const oldest = existing[0] ?? now;
-      const retryAfterSec = Math.max(
-        1,
-        Math.ceil((oldest + this.windowMs - now) / 1000),
-      );
-      this.hits.set(key, existing);
-      return { allowed: false, remaining: 0, retryAfterSec };
-    }
-
-    existing.push(now);
-    this.hits.set(key, existing);
-
-    if (this.hits.size > this.maxKeys) {
-      this.prune(cutoff);
-    }
-
-    return {
-      allowed: true,
-      remaining: Math.max(0, this.maxRequests - existing.length),
-      retryAfterSec: 0,
-    };
-  }
-
-  clear(): void {
-    this.hits.clear();
-  }
-
-  private prune(cutoff: number): void {
-    for (const [key, timestamps] of this.hits.entries()) {
-      const active = timestamps.filter((ts) => ts > cutoff);
-      if (active.length === 0) {
-        this.hits.delete(key);
-      } else {
-        this.hits.set(key, active);
-      }
-    }
-  }
+  return {
+    allowed,
+    remaining: Math.max(0, maxRequests - result.count),
+    retryAfterSec: allowed ? 0 : result.retryAfterSec,
+  };
 }
 
+/**
+ * Extracts client IP safely behind Google Cloud Run / GFE proxies.
+ * Reads the rightmost valid IP in X-Forwarded-For (appended by the trusted proxy)
+ * to prevent client-header spoofing.
+ */
 export function getClientIp(request: Request): string {
   const forwardedFor = request.headers.get("x-forwarded-for");
   if (forwardedFor) {
-    const first = forwardedFor.split(",")[0]?.trim();
-    if (first) return first.slice(0, 64);
+    const parts = forwardedFor
+      .split(",")
+      .map((part) => part.trim())
+      .filter((part) => SAFE_IP_PATTERN.test(part));
+    const rightmost = parts[parts.length - 1];
+    if (rightmost) return rightmost;
   }
+
   const realIp = request.headers.get("x-real-ip")?.trim();
-  if (realIp) return realIp.slice(0, 64);
+  if (realIp && SAFE_IP_PATTERN.test(realIp)) {
+    return realIp;
+  }
+
   return "127.0.0.1";
 }

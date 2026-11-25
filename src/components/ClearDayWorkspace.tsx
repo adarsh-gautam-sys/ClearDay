@@ -27,6 +27,20 @@ interface ClearDayWorkspaceProps {
   initialPlan: ActionPlanResponse;
 }
 
+function collectPlanItemIds(plan: ActionPlanResponse): Set<string> {
+  return new Set([
+    ...plan.routine.map((r) => r.id),
+    ...plan.indoorHacks.map((h) => h.id),
+    ...plan.sustainableAlternatives.map((s) => s.id),
+  ]);
+}
+
+function defaultAdoptedForPlan(plan: ActionPlanResponse): string[] {
+  return [plan.routine[0]?.id, plan.indoorHacks[0]?.id].filter(
+    (x): x is string => Boolean(x),
+  );
+}
+
 export function ClearDayWorkspace({
   initialAirQuality,
   initialPlan,
@@ -35,10 +49,9 @@ export function ClearDayWorkspace({
     useState<AirQualitySnapshot>(initialAirQuality);
   const [plan, setPlan] = useState<ActionPlanResponse>(initialPlan);
   const [profile, setProfile] = useState<HouseholdProfile>(DEFAULT_PROFILE);
-  const [adoptedIds, setAdoptedIds] = useState<string[]>([
-    initialPlan.routine[0]?.id ?? "routine-morning-commute",
-    initialPlan.indoorHacks[0]?.id ?? "hack-filtration-core",
-  ]);
+  const [adoptedIds, setAdoptedIds] = useState<string[]>(() =>
+    defaultAdoptedForPlan(initialPlan),
+  );
   const [communityHouseholds, setCommunityHouseholds] = useState(25);
   const [airPhase, setAirPhase] = useState<AgentPhase>("idle");
   const [planPhase, setPlanPhase] = useState<AgentPhase>("idle");
@@ -46,49 +59,7 @@ export function ClearDayWorkspace({
 
   const airAbortRef = useRef<AbortController | null>(null);
   const planAbortRef = useRef<AbortController | null>(null);
-
-  // Restore saved preferences once on mount
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      const saved = JSON.parse(raw) as {
-        profile?: unknown;
-        adoptedIds?: unknown;
-        communityHouseholds?: unknown;
-      };
-      const parsedProfile = HouseholdProfileSchema.safeParse(saved.profile);
-      if (parsedProfile.success) {
-        setProfile(parsedProfile.data);
-      }
-      if (Array.isArray(saved.adoptedIds)) {
-        setAdoptedIds(
-          saved.adoptedIds.filter((x): x is string => typeof x === "string").slice(0, 24),
-        );
-      }
-      if (
-        typeof saved.communityHouseholds === "number" &&
-        Number.isFinite(saved.communityHouseholds)
-      ) {
-        setCommunityHouseholds(
-          Math.max(1, Math.min(500, Math.round(saved.communityHouseholds))),
-        );
-      }
-    } catch {
-      // Ignore malformed or blocked localStorage
-    }
-  }, []);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({ profile, adoptedIds, communityHouseholds }),
-      );
-    } catch {
-      // Ignore storage quota errors
-    }
-  }, [profile, adoptedIds, communityHouseholds]);
+  const hasHydratedRef = useRef(false);
 
   const refreshPlan = useCallback(
     async (nextAir: AirQualitySnapshot, nextProfile: HouseholdProfile) => {
@@ -111,6 +82,13 @@ export function ClearDayWorkspace({
         }
         const nextPlan = (await res.json()) as ActionPlanResponse;
         setPlan(nextPlan);
+        setAdoptedIds((prev) => {
+          const validIds = collectPlanItemIds(nextPlan);
+          const preserved = prev.filter((id) => validIds.has(id));
+          return preserved.length > 0
+            ? preserved
+            : defaultAdoptedForPlan(nextPlan);
+        });
         setPlanPhase("done");
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
@@ -120,6 +98,74 @@ export function ClearDayWorkspace({
     },
     [],
   );
+
+  // Restore saved preferences once on mount; re-sync plan if profile changed.
+  useEffect(() => {
+    let restoredDiffers = false;
+    let restoredProfile = DEFAULT_PROFILE;
+
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw) as {
+          profile?: unknown;
+          adoptedIds?: unknown;
+          communityHouseholds?: unknown;
+        };
+        const parsedProfile = HouseholdProfileSchema.safeParse(saved.profile);
+        if (parsedProfile.success) {
+          restoredProfile = parsedProfile.data;
+          setProfile(parsedProfile.data);
+          restoredDiffers =
+            JSON.stringify(parsedProfile.data) !==
+            JSON.stringify(DEFAULT_PROFILE);
+        }
+        if (Array.isArray(saved.adoptedIds)) {
+          setAdoptedIds(
+            saved.adoptedIds
+              .filter((x): x is string => typeof x === "string")
+              .slice(0, 24),
+          );
+        }
+        if (
+          typeof saved.communityHouseholds === "number" &&
+          Number.isFinite(saved.communityHouseholds)
+        ) {
+          setCommunityHouseholds(
+            Math.max(1, Math.min(500, Math.round(saved.communityHouseholds))),
+          );
+        }
+      }
+    } catch {
+      // Ignore malformed or blocked localStorage
+    } finally {
+      hasHydratedRef.current = true;
+    }
+
+    if (restoredDiffers) {
+      void refreshPlan(initialAirQuality, restoredProfile);
+    }
+  }, [initialAirQuality, refreshPlan]);
+
+  useEffect(() => {
+    if (!hasHydratedRef.current) return;
+    try {
+      window.localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ profile, adoptedIds, communityHouseholds }),
+      );
+    } catch {
+      // Ignore storage quota errors
+    }
+  }, [profile, adoptedIds, communityHouseholds]);
+
+  // Abort any in-flight telemetry or plan requests cleanly on unmount.
+  useEffect(() => {
+    return () => {
+      airAbortRef.current?.abort();
+      planAbortRef.current?.abort();
+    };
+  }, []);
 
   async function handleSelectLocation(loc: LocationInfo) {
     airAbortRef.current?.abort();
@@ -169,11 +215,7 @@ export function ClearDayWorkspace({
   function handleResetAll() {
     setProfile(DEFAULT_PROFILE);
     setCommunityHouseholds(25);
-    const defaults = [
-      plan.routine[0]?.id,
-      plan.indoorHacks[0]?.id,
-    ].filter((x): x is string => Boolean(x));
-    setAdoptedIds(defaults);
+    setAdoptedIds(defaultAdoptedForPlan(plan));
     try {
       window.localStorage.removeItem(STORAGE_KEY);
     } catch {
@@ -182,7 +224,6 @@ export function ClearDayWorkspace({
     void refreshPlan(airQuality, DEFAULT_PROFILE);
   }
 
-  // Gather deterministic categories & titles for adopted items
   const { adoptedCategories, adoptedTitles } = useMemo(() => {
     const allItems = [
       ...plan.routine.map((r) => ({

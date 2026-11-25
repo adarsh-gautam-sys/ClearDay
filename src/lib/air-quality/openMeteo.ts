@@ -1,10 +1,12 @@
 import type { AirQualitySnapshot, HourlyPoint, LocationInfo } from "../schemas";
-import { TtlCache } from "../security/cache";
+import {
+  getDistributedStore,
+  resetDistributedStore,
+} from "../storage/distributedStore";
 import { classifyUsAqi, detectSmogWindows } from "./analyzer";
 import { buildPresetSnapshot, CITY_PRESETS } from "./presets";
 
-const aqCache = new TtlCache<AirQualitySnapshot>(200);
-const AQ_TTL_MS = 15 * 60 * 1000;
+const AQ_TTL_SEC = 15 * 60;
 
 interface GeocodingApiResult {
   name?: string;
@@ -33,8 +35,8 @@ interface OpenMeteoAqResponse {
   };
 }
 
-export function clearAirQualityCache(): void {
-  aqCache.clear();
+export async function clearAirQualityCache(): Promise<void> {
+  await resetDistributedStore();
 }
 
 export async function searchCities(query: string): Promise<LocationInfo[]> {
@@ -107,12 +109,17 @@ function formatHourLabel(isoLocal: string): string {
 export async function fetchAirQuality(
   location: LocationInfo,
 ): Promise<AirQualitySnapshot> {
-  const cacheKey = `${location.latitude.toFixed(2)},${location.longitude.toFixed(2)}`;
-  const cached = aqCache.get(cacheKey);
+  const store = getDistributedStore();
+  const cacheKey = `aq:v1:${location.latitude.toFixed(2)},${location.longitude.toFixed(2)}`;
+  const cached = await store.getJson<AirQualitySnapshot>(cacheKey);
   if (cached) {
     return {
       ...cached,
-      location: { ...cached.location, name: location.name, country: location.country },
+      location: {
+        ...cached.location,
+        name: location.name,
+        country: location.country,
+      },
     };
   }
 
@@ -183,8 +190,14 @@ export async function fetchAirQuality(
       current: {
         usAqi: currentAqi,
         pm25: currentPm25,
-        pm10: Math.max(0, Math.round((data.current?.pm10 ?? currentPm25 * 1.4) * 10) / 10),
-        no2: Math.max(0, Math.round((data.current?.nitrogen_dioxide ?? 0) * 10) / 10),
+        pm10: Math.max(
+          0,
+          Math.round((data.current?.pm10 ?? currentPm25 * 1.4) * 10) / 10,
+        ),
+        no2: Math.max(
+          0,
+          Math.round((data.current?.nitrogen_dioxide ?? 0) * 10) / 10,
+        ),
         o3: Math.max(0, Math.round((data.current?.ozone ?? 0) * 10) / 10),
         co: Math.max(0, Math.round(data.current?.carbon_monoxide ?? 0)),
         band: classification.band,
@@ -195,14 +208,13 @@ export async function fetchAirQuality(
       windows: detectSmogWindows(hourly),
     };
 
-    aqCache.set(cacheKey, snapshot, AQ_TTL_MS);
+    await store.setJson(cacheKey, snapshot, AQ_TTL_SEC);
     return snapshot;
   } catch {
     const closest = findClosestPreset(location);
-    const fallback = buildPresetSnapshot({
+    return buildPresetSnapshot({
       ...closest,
       location,
     });
-    return fallback;
   }
 }

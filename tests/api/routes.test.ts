@@ -1,23 +1,34 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GET as getAirQuality } from "@/app/api/air-quality/route";
 import { POST as postChat } from "@/app/api/chat/route";
+import { GET as getHealth } from "@/app/api/health/route";
 import { POST as postPlan } from "@/app/api/plan/route";
+import { parseSseBuffer } from "@/lib/ai/sse";
 import { clearAirQualityCache } from "@/lib/air-quality/openMeteo";
 import { buildPresetSnapshot, CITY_PRESETS } from "@/lib/air-quality/presets";
 import { ActionPlanResponseSchema, DEFAULT_PROFILE } from "@/lib/schemas";
-import { resetAllRouteState } from "@/lib/security/routeState";
+import { resetDistributedStore } from "@/lib/storage/distributedStore";
 
 describe("API Route Handlers", () => {
   const sampleSnapshot = buildPresetSnapshot(CITY_PRESETS[0]!);
 
-  beforeEach(() => {
-    resetAllRouteState();
-    clearAirQualityCache();
+  beforeEach(async () => {
+    await resetDistributedStore();
+    await clearAirQualityCache();
     delete process.env.GEMINI_API_KEY;
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("GET /api/health reports backend store and AI readiness", async () => {
+    const res = await getHealth();
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.status).toBe("ok");
+    expect(json.store).toBe("memory-dev");
+    expect(json.aiMode).toBe("fallback");
   });
 
   it("GET /api/air-quality rejects out-of-range coordinates with 400", async () => {
@@ -64,8 +75,7 @@ describe("API Route Handlers", () => {
     expect(liveBody.source).toBe("open-meteo");
     expect(liveBody.current.usAqi).toBe(222);
 
-    // Clear cache and force upstream rejection -> clean fallback
-    clearAirQualityCache();
+    await clearAirQualityCache();
     mockFetch.mockRejectedValueOnce(new Error("network offline"));
     const fallbackRes = await getAirQuality(
       new Request(
@@ -77,7 +87,16 @@ describe("API Route Handlers", () => {
     expect(fallbackBody.source).toBe("fallback");
   });
 
-  it("POST /api/plan validates input, caches identical requests, and enforces rate limit", async () => {
+  it("POST /api/plan rejects >32 KiB payloads with 413, caches requests, and enforces rate limit", async () => {
+    const tooBig = await postPlan(
+      new Request("http://localhost/api/plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-forwarded-for": "10.0.0.1" },
+        body: JSON.stringify({ pad: "x".repeat(35_000) }),
+      }),
+    );
+    expect(tooBig.status).toBe(413);
+
     const badRes = await postPlan(
       new Request("http://localhost/api/plan", {
         method: "POST",
@@ -115,7 +134,6 @@ describe("API Route Handlers", () => {
     expect(second.status).toBe(200);
     expect(second.headers.get("X-Cache")).toBe("HIT");
 
-    // Exhaust 15 req/min limit for IP 10.0.0.99
     for (let i = 0; i < 15; i++) {
       const ok = await postPlan(
         new Request("http://localhost/api/plan", {
@@ -136,7 +154,7 @@ describe("API Route Handlers", () => {
     expect(throttled.status).toBe(429);
   });
 
-  it("POST /api/chat streams reply, rejects >500 chars, and sets medical alert header", async () => {
+  it("POST /api/chat emits valid SSE frames, rejects >500 chars, and sets medical alert", async () => {
     const overLimit = await postChat(
       new Request("http://localhost/api/chat", {
         method: "POST",
@@ -166,8 +184,23 @@ describe("API Route Handlers", () => {
       }),
     );
     expect(emergencyRes.status).toBe(200);
+    expect(emergencyRes.headers.get("Content-Type")).toContain("text/event-stream");
     expect(emergencyRes.headers.get("X-Medical-Alert")).toBe("true");
-    const streamed = await emergencyRes.text();
-    expect(streamed).toContain("emergency medical care");
+
+    const rawSse = await emergencyRes.text();
+    const { events } = parseSseBuffer(rawSse);
+    expect(events[0]).toEqual({
+      event: "meta",
+      data: { mode: "fallback", medicalAlert: true },
+    });
+    const combinedText = events
+      .filter((e) => e.event === "chunk")
+      .map((e) => e.data.text)
+      .join("");
+    expect(combinedText).toContain("emergency medical care");
+    expect(events[events.length - 1]).toEqual({
+      event: "done",
+      data: { ok: true },
+    });
   });
 });

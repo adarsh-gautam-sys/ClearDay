@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ClearDayWorkspace } from "@/components/ClearDayWorkspace";
 import { buildFallbackPlan } from "@/lib/ai/fallbackPlan";
+import { formatSseEvent } from "@/lib/ai/sse";
 import { buildPresetSnapshot, CITY_PRESETS } from "@/lib/air-quality/presets";
 import { DEFAULT_PROFILE } from "@/lib/schemas";
 
@@ -16,6 +17,18 @@ describe("ClearDayWorkspace UI flows", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("formats Western hemisphere coordinates accurately", () => {
+    const slcPreset = CITY_PRESETS.find((p) => p.id === "salt-lake-city")!;
+    const slcSnapshot = buildPresetSnapshot(slcPreset);
+    const slcPlan = buildFallbackPlan(slcSnapshot, DEFAULT_PROFILE);
+
+    render(
+      <ClearDayWorkspace initialAirQuality={slcSnapshot} initialPlan={slcPlan} />,
+    );
+
+    expect(screen.getByText(/40\.76°N, 111\.89°W/)).toBeInTheDocument();
   });
 
   it("switches tabs, toggles action adoption synchronously, updates community slider, and closes Methodology modal via Escape", async () => {
@@ -62,14 +75,23 @@ describe("ClearDayWorkspace UI flows", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("streams Smog Copilot reply and surfaces medical emergency banner when signaled", async () => {
+  it("streams SSE Smog Copilot reply and surfaces medical emergency banner when signaled", async () => {
     const user = userEvent.setup();
     const encoder = new TextEncoder();
+    const ssePayload =
+      formatSseEvent({
+        event: "meta",
+        data: { mode: "fallback", medicalAlert: true },
+      }) +
+      formatSseEvent({
+        event: "chunk",
+        data: { text: "Seek immediate emergency care for chest pain." },
+      }) +
+      formatSseEvent({ event: "done", data: { ok: true } });
+
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
-        controller.enqueue(
-          encoder.encode("Seek immediate emergency care for chest pain."),
-        );
+        controller.enqueue(encoder.encode(ssePayload));
         controller.close();
       },
     });
@@ -78,7 +100,7 @@ describe("ClearDayWorkspace UI flows", () => {
       new Response(stream, {
         status: 200,
         headers: {
-          "Content-Type": "text/plain; charset=utf-8",
+          "Content-Type": "text/event-stream; charset=utf-8",
           "X-Medical-Alert": "true",
         },
       }),

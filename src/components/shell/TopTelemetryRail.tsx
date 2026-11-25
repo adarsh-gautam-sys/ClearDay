@@ -119,7 +119,10 @@ export function TopTelemetryRail({
                 </span>
               </div>
               <p className="font-mono text-[11px] tabular-nums text-[#52525B]">
-                {location.latitude.toFixed(2)}°N, {location.longitude.toFixed(2)}°E ·{" "}
+                {Math.abs(location.latitude).toFixed(2)}°
+                {location.latitude >= 0 ? "N" : "S"},{" "}
+                {Math.abs(location.longitude).toFixed(2)}°
+                {location.longitude >= 0 ? "E" : "W"} ·{" "}
                 {airQuality.source === "open-meteo" ? "OPEN-METEO LIVE" : "OFFLINE SNAPSHOT"}
               </p>
             </div>

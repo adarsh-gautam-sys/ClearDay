@@ -29,6 +29,14 @@ export function sanitizeUserText(input: string, maxLength: number): string {
 }
 
 /**
+ * Strips angle brackets in addition to control characters so untrusted user or
+ * third-party strings cannot break out of XML prompt boundary tags.
+ */
+export function escapePromptDelimiters(input: string, maxLength: number): string {
+  return sanitizeUserText(input, maxLength).replace(/[<>]/g, "");
+}
+
+/**
  * Deterministic pre-generation medical safety guardrail for acute respiratory
  * distress signals.
  */

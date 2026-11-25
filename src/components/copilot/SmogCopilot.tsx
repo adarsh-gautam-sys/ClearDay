@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { AlertTriangle, Send } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { AlertTriangle, Send, Square } from "lucide-react";
+import { parseSseBuffer } from "@/lib/ai/sse";
 import type {
   AirQualitySnapshot,
   ChatMessage,
@@ -32,10 +33,32 @@ export function SmogCopilot({
   const [phase, setPhase] = useState<AgentPhase>("idle");
   const [medicalAlert, setMedicalAlert] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    abortRef.current?.abort();
+    setErrorMsg(null);
+    setPhase("idle");
+  }, [airQuality.location.name]);
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
+
+  function handleStop() {
+    abortRef.current?.abort();
+    setPhase("done");
+  }
 
   async function submitQuestion(questionText: string) {
     const clean = questionText.trim();
     if (!clean || phase === "writing" || phase === "reasoning") return;
+
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     setErrorMsg(null);
     const nextHistory = [...messages, { role: "user" as const, content: clean }];
@@ -46,7 +69,10 @@ export function SmogCopilot({
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+        },
         body: JSON.stringify({
           airQuality,
           profile,
@@ -54,6 +80,7 @@ export function SmogCopilot({
           history: messages.slice(-6),
           message: clean,
         }),
+        signal: controller.signal,
       });
 
       if (response.headers.get("X-Medical-Alert") === "true") {
@@ -67,24 +94,41 @@ export function SmogCopilot({
       setPhase("writing");
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
+      let sseBuffer = "";
       let accumulated = "";
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        accumulated += decoder.decode(value, { stream: true });
-        setMessages((prev) => {
-          const updated = [...prev];
-          const lastIdx = updated.length - 1;
-          if (lastIdx >= 0 && updated[lastIdx]?.role === "assistant") {
-            updated[lastIdx] = { role: "assistant", content: accumulated };
+        sseBuffer += decoder.decode(value, { stream: true });
+        const { events, rest } = parseSseBuffer(sseBuffer);
+        sseBuffer = rest;
+
+        for (const evt of events) {
+          if (evt.event === "meta" && evt.data.medicalAlert) {
+            setMedicalAlert(true);
+          } else if (evt.event === "chunk") {
+            accumulated += evt.data.text;
+            setMessages((prev) => {
+              const updated = [...prev];
+              const lastIdx = updated.length - 1;
+              if (lastIdx >= 0 && updated[lastIdx]?.role === "assistant") {
+                updated[lastIdx] = { role: "assistant", content: accumulated };
+              }
+              return updated;
+            });
+          } else if (evt.event === "error") {
+            setErrorMsg(evt.data.message);
           }
-          return updated;
-        });
+        }
       }
 
       setPhase("done");
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setPhase("done");
+        return;
+      }
       setPhase("error");
       setErrorMsg("Unable to reach Smog Copilot right now. Please try again.");
       setMessages((prev) => prev.slice(0, -1));
@@ -95,6 +139,8 @@ export function SmogCopilot({
     event.preventDefault();
     void submitQuestion(input);
   }
+
+  const isBusy = phase === "reasoning" || phase === "writing";
 
   return (
     <section
@@ -146,7 +192,7 @@ export function SmogCopilot({
           <button
             key={chip}
             type="button"
-            disabled={phase === "reasoning" || phase === "writing"}
+            disabled={isBusy}
             onClick={() => void submitQuestion(chip)}
             className="rounded-md border border-[#D8D2C5] bg-[#F6F4EF] px-2.5 py-1 text-left text-xs font-medium text-[#3F3F46] hover:bg-[#ECE8DF] hover:text-[#18181B] disabled:opacity-50"
           >
@@ -208,14 +254,25 @@ export function SmogCopilot({
           placeholder="Ask about school runs, masks, DIY filters, or heating..."
           className="min-w-0 flex-1 rounded-lg border border-[#D8D2C5] bg-[#F6F4EF] px-3 py-2 text-xs text-[#18181B] placeholder:text-[#71717A] shadow-beautiful-sm"
         />
-        <button
-          type="submit"
-          disabled={!input.trim() || phase === "reasoning" || phase === "writing"}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-[#0F6E6E] px-3.5 py-2 text-xs font-semibold text-[#FCFBF8] shadow-beautiful-sm hover:bg-[#0D5C5C] disabled:opacity-50"
-        >
-          <Send className="h-3.5 w-3.5" aria-hidden="true" />
-          <span>Ask</span>
-        </button>
+        {isBusy ? (
+          <button
+            type="button"
+            onClick={handleStop}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[#991B1B] bg-[#FEE2E2] px-3.5 py-2 text-xs font-semibold text-[#991B1B] shadow-beautiful-sm hover:bg-[#FECACA]"
+          >
+            <Square className="h-3 w-3 fill-current" aria-hidden="true" />
+            <span>Stop</span>
+          </button>
+        ) : (
+          <button
+            type="submit"
+            disabled={!input.trim()}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-[#0F6E6E] px-3.5 py-2 text-xs font-semibold text-[#FCFBF8] shadow-beautiful-sm hover:bg-[#0D5C5C] disabled:opacity-50"
+          >
+            <Send className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>Ask</span>
+          </button>
+        )}
       </form>
 
       <p className="mt-2.5 font-mono text-[10px] text-[#52525B]">

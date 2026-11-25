@@ -122,7 +122,7 @@ export function buildFallbackPlan(
       title:
         profile.purifier === "hepa"
           ? "Optimize HEPA placement for overnight clean zone"
-          : "Build a \$35 MERV-13 Box-Fan Air Cleaner (Corsi-style)",
+          : "Build a $35 MERV-13 Box-Fan Air Cleaner (Corsi-style)",
       steps:
         profile.purifier === "hepa"
           ? [

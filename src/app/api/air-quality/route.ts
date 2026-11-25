@@ -2,12 +2,17 @@ import { NextResponse } from "next/server";
 import { fetchAirQuality, searchCities } from "@/lib/air-quality/openMeteo";
 import { findPresetById } from "@/lib/air-quality/presets";
 import { CoordinateQuerySchema } from "@/lib/schemas";
-import { getClientIp } from "@/lib/security/rateLimit";
-import { aqRateLimiter } from "@/lib/security/routeState";
+import { formatValidationErrors } from "@/lib/security/http";
+import { checkRateLimit, getClientIp } from "@/lib/security/rateLimit";
+import { getDistributedStore } from "@/lib/storage/distributedStore";
+
+const EDGE_CACHE_HEADER =
+  "public, max-age=180, s-maxage=600, stale-while-revalidate=900";
 
 export async function GET(request: Request) {
   const ip = getClientIp(request);
-  const limit = aqRateLimiter.check(`${ip}:/api/air-quality`);
+  const store = getDistributedStore();
+  const limit = await checkRateLimit(`${ip}:/api/air-quality`, 60, 60, store);
   if (!limit.allowed) {
     return NextResponse.json(
       { error: "Too many air quality requests. Please retry shortly." },
@@ -31,7 +36,12 @@ export async function GET(request: Request) {
     const results = await searchCities(query);
     return NextResponse.json(
       { results },
-      { headers: { "Cache-Control": "public, max-age=300" } },
+      {
+        headers: {
+          "Cache-Control": EDGE_CACHE_HEADER,
+          "X-Store-Backend": store.backend,
+        },
+      },
     );
   }
 
@@ -49,7 +59,10 @@ export async function GET(request: Request) {
 
     if (!parsed.success) {
       return NextResponse.json(
-        { error: "Invalid coordinates supplied.", issues: parsed.error.issues },
+        {
+          error: "Invalid coordinates supplied.",
+          issues: formatValidationErrors(parsed.error.issues),
+        },
         { status: 400 },
       );
     }
@@ -63,13 +76,19 @@ export async function GET(request: Request) {
     });
 
     return NextResponse.json(snapshot, {
-      headers: { "Cache-Control": "public, max-age=300" },
+      headers: {
+        "Cache-Control": EDGE_CACHE_HEADER,
+        "X-Store-Backend": store.backend,
+      },
     });
   }
 
   const preset = findPresetById(searchParams.get("preset"));
   const snapshot = await fetchAirQuality(preset.location);
   return NextResponse.json(snapshot, {
-    headers: { "Cache-Control": "public, max-age=300" },
+    headers: {
+      "Cache-Control": EDGE_CACHE_HEADER,
+      "X-Store-Backend": store.backend,
+    },
   });
 }

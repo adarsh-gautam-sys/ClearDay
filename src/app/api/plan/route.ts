@@ -1,14 +1,21 @@
+import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { generateActionPlan, hasGeminiKey } from "@/lib/ai/gemini";
-import { PlanRequestSchema } from "@/lib/schemas";
-import { getClientIp } from "@/lib/security/rateLimit";
-import { planCache, planRateLimiter } from "@/lib/security/routeState";
+import { type ActionPlanResponse, PlanRequestSchema } from "@/lib/schemas";
+import {
+  DEFAULT_MAX_JSON_BYTES,
+  formatValidationErrors,
+  readBoundedJson,
+} from "@/lib/security/http";
+import { checkRateLimit, getClientIp } from "@/lib/security/rateLimit";
+import { getDistributedStore } from "@/lib/storage/distributedStore";
 
-const PLAN_TTL_MS = 15 * 60 * 1000;
+const PLAN_TTL_SEC = 15 * 60;
 
 export async function POST(request: Request) {
   const ip = getClientIp(request);
-  const limit = planRateLimiter.check(`${ip}:/api/plan`);
+  const store = getDistributedStore();
+  const limit = await checkRateLimit(`${ip}:/api/plan`, 15, 60, store);
   if (!limit.allowed) {
     return NextResponse.json(
       { error: "Rate limit exceeded for action plan generation." },
@@ -19,23 +26,27 @@ export async function POST(request: Request) {
     );
   }
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  const bodyResult = await readBoundedJson(request, DEFAULT_MAX_JSON_BYTES);
+  if (!bodyResult.ok) {
+    return NextResponse.json(
+      { error: bodyResult.error },
+      { status: bodyResult.status },
+    );
   }
 
-  const parsed = PlanRequestSchema.safeParse(body);
+  const parsed = PlanRequestSchema.safeParse(bodyResult.data);
   if (!parsed.success) {
     return NextResponse.json(
-      { error: "Invalid plan request payload.", issues: parsed.error.issues },
+      {
+        error: "Invalid plan request payload.",
+        issues: formatValidationErrors(parsed.error.issues),
+      },
       { status: 400 },
     );
   }
 
   const { airQuality, profile } = parsed.data;
-  const cacheKey = JSON.stringify({
+  const rawKey = JSON.stringify({
     lat: airQuality.location.latitude.toFixed(2),
     lon: airQuality.location.longitude.toFixed(2),
     band: airQuality.current.band,
@@ -43,24 +54,27 @@ export async function POST(request: Request) {
     profile,
     ai: hasGeminiKey() ? "gemini" : "fallback",
   });
+  const cacheKey = `plan:v1:${createHash("sha256").update(rawKey).digest("hex").slice(0, 32)}`;
 
-  const cached = planCache.get(cacheKey);
+  const cached = await store.getJson<ActionPlanResponse>(cacheKey);
   if (cached) {
     return NextResponse.json(cached, {
       headers: {
         "X-Cache": "HIT",
         "X-AI-Mode": cached.mode,
+        "X-Store-Backend": store.backend,
       },
     });
   }
 
   const plan = await generateActionPlan(airQuality, profile);
-  planCache.set(cacheKey, plan, PLAN_TTL_MS);
+  await store.setJson(cacheKey, plan, PLAN_TTL_SEC);
 
   return NextResponse.json(plan, {
     headers: {
       "X-Cache": "MISS",
       "X-AI-Mode": plan.mode,
+      "X-Store-Backend": store.backend,
     },
   });
 }

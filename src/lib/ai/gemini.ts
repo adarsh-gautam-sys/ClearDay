@@ -8,6 +8,7 @@ import {
 } from "../schemas";
 import { buildFallbackChatReply, buildFallbackPlan } from "./fallbackPlan";
 import { buildChatPrompts, buildPlanPrompts } from "./prompts";
+import { formatSseEvent } from "./sse";
 
 const IMPACT_CATEGORIES = [
   "hepa_filtration",
@@ -115,6 +116,37 @@ const ACTION_PLAN_JSON_SCHEMA = {
   ],
 };
 
+const GEMINI_PLAN_TIMEOUT_MS = 15_000;
+
+let cachedClient: GoogleGenAI | null = null;
+let cachedApiKey: string | null = null;
+
+function getGenAiClient(apiKey: string): GoogleGenAI {
+  if (!cachedClient || cachedApiKey !== apiKey) {
+    cachedClient = new GoogleGenAI({ apiKey });
+    cachedApiKey = apiKey;
+  }
+  return cachedClient;
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`Gemini request timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
 export function hasGeminiKey(): boolean {
   return Boolean(process.env.GEMINI_API_KEY?.trim());
 }
@@ -123,7 +155,10 @@ function getModelName(): string {
   return process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
 }
 
-function createTextChunkStream(text: string): ReadableStream<Uint8Array> {
+function createSseFallbackStream(
+  text: string,
+  medicalAlert: boolean,
+): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const words = text.split(/(?<=\s)/);
   const chunkSize = 6;
@@ -131,10 +166,27 @@ function createTextChunkStream(text: string): ReadableStream<Uint8Array> {
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
+        controller.enqueue(
+          encoder.encode(
+            formatSseEvent({
+              event: "meta",
+              data: { mode: "fallback", medicalAlert },
+            }),
+          ),
+        );
         for (let i = 0; i < words.length; i += chunkSize) {
           const piece = words.slice(i, i + chunkSize).join("");
-          controller.enqueue(encoder.encode(piece));
+          controller.enqueue(
+            encoder.encode(
+              formatSseEvent({ event: "chunk", data: { text: piece } }),
+            ),
+          );
         }
+        controller.enqueue(
+          encoder.encode(
+            formatSseEvent({ event: "done", data: { ok: true } }),
+          ),
+        );
         controller.close();
       } catch (err) {
         controller.error(err);
@@ -153,23 +205,26 @@ export async function generateActionPlan(
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = getGenAiClient(apiKey);
     const { systemInstruction, userPrompt } = buildPlanPrompts(
       airQuality,
       profile,
     );
 
-    const response = await ai.models.generateContent({
-      model: getModelName(),
-      contents: userPrompt,
-      config: {
-        systemInstruction,
-        responseMimeType: "application/json",
-        responseJsonSchema: ACTION_PLAN_JSON_SCHEMA,
-        temperature: 0.3,
-        maxOutputTokens: 2048,
-      },
-    });
+    const response = await withTimeout(
+      ai.models.generateContent({
+        model: getModelName(),
+        contents: userPrompt,
+        config: {
+          systemInstruction,
+          responseMimeType: "application/json",
+          responseJsonSchema: ACTION_PLAN_JSON_SCHEMA,
+          temperature: 0.3,
+          maxOutputTokens: 2048,
+        },
+      }),
+      GEMINI_PLAN_TIMEOUT_MS,
+    );
 
     const rawText = response.text;
     if (!rawText) {
@@ -200,15 +255,20 @@ export async function streamCopilotReply(params: {
   adoptedTitles: string[];
   history: ChatMessage[];
   message: string;
+  medicalAlert?: boolean;
 }): Promise<{ stream: ReadableStream<Uint8Array>; mode: "gemini" | "fallback" }> {
+  const medicalAlert = Boolean(params.medicalAlert);
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
     const fallback = buildFallbackChatReply(params);
-    return { stream: createTextChunkStream(fallback), mode: "fallback" };
+    return {
+      stream: createSseFallbackStream(fallback, medicalAlert),
+      mode: "fallback",
+    };
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = getGenAiClient(apiKey);
     const { systemInstruction, contents } = buildChatPrompts(params);
     const responseStream = await ai.models.generateContentStream({
       model: getModelName(),
@@ -224,24 +284,59 @@ export async function streamCopilotReply(params: {
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
         try {
+          controller.enqueue(
+            encoder.encode(
+              formatSseEvent({
+                event: "meta",
+                data: { mode: "gemini", medicalAlert },
+              }),
+            ),
+          );
+
           let emittedAny = false;
           for await (const chunk of responseStream) {
             const text = chunk.text;
             if (text) {
               emittedAny = true;
-              controller.enqueue(encoder.encode(text));
+              controller.enqueue(
+                encoder.encode(
+                  formatSseEvent({ event: "chunk", data: { text } }),
+                ),
+              );
             }
           }
           if (!emittedAny) {
-            controller.enqueue(encoder.encode(buildFallbackChatReply(params)));
+            controller.enqueue(
+              encoder.encode(
+                formatSseEvent({
+                  event: "chunk",
+                  data: { text: buildFallbackChatReply(params) },
+                }),
+              ),
+            );
           }
+          controller.enqueue(
+            encoder.encode(
+              formatSseEvent({ event: "done", data: { ok: true } }),
+            ),
+          );
           controller.close();
         } catch (streamErr) {
           const reason =
             streamErr instanceof Error ? streamErr.message : "stream_error";
           console.warn(`[ClearDay] Gemini stream interrupted: ${reason}`);
           controller.enqueue(
-            encoder.encode("\n\n" + buildFallbackChatReply(params)),
+            encoder.encode(
+              formatSseEvent({
+                event: "chunk",
+                data: { text: "\n\n" + buildFallbackChatReply(params) },
+              }),
+            ),
+          );
+          controller.enqueue(
+            encoder.encode(
+              formatSseEvent({ event: "done", data: { ok: true } }),
+            ),
           );
           controller.close();
         }
@@ -253,7 +348,10 @@ export async function streamCopilotReply(params: {
     const reason = err instanceof Error ? err.message : "unknown_error";
     console.warn(`[ClearDay] Falling back from Gemini chat: ${reason}`);
     return {
-      stream: createTextChunkStream(buildFallbackChatReply(params)),
+      stream: createSseFallbackStream(
+        buildFallbackChatReply(params),
+        medicalAlert,
+      ),
       mode: "fallback",
     };
   }
