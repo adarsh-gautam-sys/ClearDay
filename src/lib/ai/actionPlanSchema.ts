@@ -4,8 +4,9 @@ const IMPACT_CATEGORY_VALUES = [...ImpactCategorySchema.options];
 const COST_TIER_VALUES = [...CostTierSchema.options];
 
 /**
- * Standard lowercase JSON Schema derived from Zod enums so Vertex AI and
- * Gemini Developer API share one canonical contract without duplicated enum lists.
+ * Standard lowercase JSON Schema derived from Zod enums.
+ * Array cardinalities are omitted here so Vertex AI controlled-decoding state
+ * budgets stay compact; Zod validates exact min/max item counts post-parse.
  */
 export const ACTION_PLAN_JSON_SCHEMA = {
   type: "object",
@@ -14,8 +15,6 @@ export const ACTION_PLAN_JSON_SCHEMA = {
     mode: { type: "string", enum: ["gemini", "fallback"] },
     routine: {
       type: "array",
-      minItems: 3,
-      maxItems: 6,
       items: {
         type: "object",
         properties: {
@@ -40,8 +39,6 @@ export const ACTION_PLAN_JSON_SCHEMA = {
     },
     indoorHacks: {
       type: "array",
-      minItems: 3,
-      maxItems: 5,
       items: {
         type: "object",
         properties: {
@@ -49,8 +46,6 @@ export const ACTION_PLAN_JSON_SCHEMA = {
           title: { type: "string" },
           steps: {
             type: "array",
-            minItems: 2,
-            maxItems: 5,
             items: { type: "string" },
           },
           whyItHelps: { type: "string" },
@@ -71,8 +66,6 @@ export const ACTION_PLAN_JSON_SCHEMA = {
     },
     sustainableAlternatives: {
       type: "array",
-      minItems: 3,
-      maxItems: 5,
       items: {
         type: "object",
         properties: {

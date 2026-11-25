@@ -44,15 +44,16 @@ export async function POST(request: Request) {
   }
 
   const { airQuality, profile } = parsed.data;
+  const aiConfigured = hasGeminiKey();
   const rawKey = JSON.stringify({
     lat: airQuality.location.latitude.toFixed(2),
     lon: airQuality.location.longitude.toFixed(2),
     band: airQuality.current.band,
     vent: airQuality.windows.bestVentilation.recommended,
     profile,
-    ai: hasGeminiKey() ? "gemini" : "fallback",
+    ai: aiConfigured ? "gemini" : "fallback",
   });
-  const cacheKey = `plan:v2:${createHash("sha256").update(rawKey).digest("hex").slice(0, 32)}`;
+  const cacheKey = `plan:v3:${createHash("sha256").update(rawKey).digest("hex").slice(0, 32)}`;
 
   const cached = await store.getJson<ActionPlanResponse>(cacheKey);
   if (cached) {
@@ -66,7 +67,9 @@ export async function POST(request: Request) {
   }
 
   const plan = await generateActionPlan(airQuality, profile);
-  await store.setJson(cacheKey, plan, PLAN_TTL_SEC);
+  if (!aiConfigured || plan.mode === "gemini") {
+    await store.setJson(cacheKey, plan, PLAN_TTL_SEC);
+  }
 
   return NextResponse.json(plan, {
     headers: {
