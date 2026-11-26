@@ -14,6 +14,13 @@ const eslintConfig = [
     ignores: [".next/**", "coverage/**", "node_modules/**", "next-env.d.ts"],
   },
   ...compat.extends("next/core-web-vitals", "next/typescript"),
+  {
+    rules: {
+      eqeqeq: ["error", "always"],
+      "no-var": "error",
+      "prefer-const": "error",
+    },
+  },
 ];
 
 export default eslintConfig;

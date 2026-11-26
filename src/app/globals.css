@@ -3,6 +3,17 @@
 @theme inline {
   --font-sans: var(--font-plus-jakarta), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, monospace;
+  --color-paper: #f6f4ef;
+  --color-card: #fcfbf8;
+  --color-rail: #ece8df;
+  --color-hairline: #d8d2c5;
+  --color-hairline-soft: #e5e0d5;
+  --color-ink: #18181b;
+  --color-ink-body: #3f3f46;
+  --color-ink-muted: #52525b;
+  --color-accent: #0f6e6e;
+  --color-accent-soft: #e6f4f1;
+  --color-accent-border: #b2dbd4;
 }
 
 :root {
@@ -140,4 +151,18 @@ button {
 :focus-visible {
   outline: 2px solid var(--accent-teal);
   outline-offset: 2px;
+}
+
+@media (forced-colors: active) {
+  button,
+  select,
+  input,
+  [role="slider"],
+  [role="tab"],
+  [role="dialog"] {
+    border: 1px solid ButtonText;
+  }
+  :focus-visible {
+    outline: 2px solid Highlight;
+  }
 }

@@ -290,5 +290,54 @@ describe("API Route Handlers", () => {
       }),
     );
     expect(throttledProbe.status).toBe(429);
+    expect(throttledProbe.headers.get("X-Request-Id")).toBeTruthy();
+  });
+
+  it("rejects cross-origin POST requests with 403 and emits no-store + X-Request-Id on /api/plan", async () => {
+    const crossOriginPlan = await postPlan(
+      new Request("http://localhost/api/plan", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: "https://evil.example",
+        },
+        body: JSON.stringify({ airQuality: sampleSnapshot, profile: DEFAULT_PROFILE }),
+      }),
+    );
+    expect(crossOriginPlan.status).toBe(403);
+
+    const crossOriginChat = await postChat(
+      new Request("http://localhost/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: "https://evil.example",
+        },
+        body: JSON.stringify({
+          airQuality: sampleSnapshot,
+          profile: DEFAULT_PROFILE,
+          adoptedTitles: [],
+          history: [],
+          message: "hi",
+        }),
+      }),
+    );
+    expect(crossOriginChat.status).toBe(403);
+
+    const sameOriginPlan = await postPlan(
+      new Request("https://clearday.example.run.app/api/plan", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: "https://clearday.example.run.app",
+          "x-forwarded-host": "clearday.example.run.app",
+          "x-forwarded-proto": "https",
+        },
+        body: JSON.stringify({ airQuality: sampleSnapshot, profile: DEFAULT_PROFILE }),
+      }),
+    );
+    expect(sameOriginPlan.status).toBe(200);
+    expect(sameOriginPlan.headers.get("Cache-Control")).toBe("no-store");
+    expect(sameOriginPlan.headers.get("X-Request-Id")).toBeTruthy();
   });
 });

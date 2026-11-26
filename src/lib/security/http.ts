@@ -1,5 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import type { z } from "zod";
+import { logError } from "../observability/logger";
 import { getDistributedStore } from "../storage/distributedStore";
 import type { DistributedStore } from "../storage/types";
 import { utf8ByteLength } from "../storage/utils";
@@ -82,6 +84,81 @@ export async function readBoundedJson(
     return { ok: true, data: JSON.parse(raw) as unknown };
   } catch {
     return { ok: false, status: 400, error: "Invalid JSON body." };
+  }
+}
+
+/**
+ * Verifies same-origin browser POST requests when an Origin header is supplied,
+ * defending state-changing routes against cross-site request forgery.
+ */
+export function verifySameOrigin(request: Request): NextResponse | null {
+  const originHeader = request.headers.get("origin")?.trim();
+  if (!originHeader) return null;
+
+  let parsedOrigin: string;
+  try {
+    parsedOrigin = new URL(originHeader).origin;
+  } catch {
+    return NextResponse.json(
+      { error: "Invalid Origin header." },
+      { status: 403 },
+    );
+  }
+
+  const forwardedHost = request.headers
+    .get("x-forwarded-host")
+    ?.split(",")[0]
+    ?.trim();
+  const host = forwardedHost || request.headers.get("host")?.trim();
+  const forwardedProto = request.headers
+    .get("x-forwarded-proto")
+    ?.split(",")[0]
+    ?.trim();
+
+  let expectedOrigin: string;
+  try {
+    const reqUrl = new URL(request.url);
+    const proto = forwardedProto || reqUrl.protocol.replace(/:$/, "");
+    expectedOrigin = host ? `${proto}://${host}` : reqUrl.origin;
+  } catch {
+    expectedOrigin = "";
+  }
+
+  if (!expectedOrigin || parsedOrigin !== expectedOrigin) {
+    return NextResponse.json(
+      { error: "Cross-origin requests are not permitted." },
+      { status: 403 },
+    );
+  }
+
+  return null;
+}
+
+/**
+ * Wraps route handlers with correlation Request-Id propagation and sanitized
+ * 500 error boundaries so unhandled errors never leak stack traces.
+ */
+export async function withApiErrorHandling(
+  route: string,
+  request: Request,
+  handler: (request: Request, requestId: string) => Promise<Response>,
+): Promise<Response> {
+  const requestId = randomUUID();
+  try {
+    const res = await handler(request, requestId);
+    res.headers.set("X-Request-Id", requestId);
+    return res;
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : "unexpected_error";
+    logError("API", `Unhandled exception in ${route}`, {
+      route,
+      requestId,
+      reason,
+    });
+    return NextResponse.json(
+      { error: "Internal server error.", requestId },
+      { status: 500, headers: { "X-Request-Id": requestId } },
+    );
   }
 }
 

@@ -165,6 +165,10 @@ export function buildPresetSnapshot(
 }
 
 export function findPresetById(id?: string | null): CityPreset {
-  if (!id) return CITY_PRESETS[0]!;
-  return CITY_PRESETS.find((p) => p.id === id) ?? CITY_PRESETS[0]!;
+  const defaultPreset = CITY_PRESETS[0];
+  if (!defaultPreset) {
+    throw new Error("CITY_PRESETS must define at least one city");
+  }
+  if (!id) return defaultPreset;
+  return CITY_PRESETS.find((p) => p.id === id) ?? defaultPreset;
 }

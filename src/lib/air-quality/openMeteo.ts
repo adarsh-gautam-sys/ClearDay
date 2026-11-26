@@ -1,14 +1,14 @@
+import { createRateLimitedLogger } from "../observability/logger";
 import type { AirQualitySnapshot, HourlyPoint, LocationInfo } from "../schemas";
 import {
   getDistributedStore,
   resetDistributedStore,
 } from "../storage/distributedStore";
-import { createRateLimitedWarner } from "../storage/utils";
 import { classifyUsAqi, detectSmogWindows } from "./analyzer";
 import { buildPresetSnapshot, CITY_PRESETS } from "./presets";
 
 const AQ_TTL_SEC = 15 * 60;
-const warnOpenMeteo = createRateLimitedWarner("OpenMeteo");
+const warnOpenMeteo = createRateLimitedLogger("OpenMeteo");
 
 interface GeocodingApiResult {
   name?: string;

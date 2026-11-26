@@ -190,6 +190,9 @@ export function HourlySmogChart({
       ) : (
         <div className="mt-2 max-h-48 overflow-auto rounded-md border border-[#D8D2C5] bg-[#FCFBF8]">
           <table className="w-full text-left font-mono text-xs tabular-nums">
+            <caption className="sr-only">
+              24-hour winter PM2.5 and US AQI forecast for {cityName}
+            </caption>
             <thead className="sticky top-0 border-b border-[#D8D2C5] bg-[#ECE8DF] text-[10px] text-[#52525B]">
               <tr>
                 <th scope="col" className="px-3 py-1.5 uppercase">Hour</th>

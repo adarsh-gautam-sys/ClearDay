@@ -1,3 +1,4 @@
+import { logWarn } from "../observability/logger";
 import { FirestoreRestStore } from "./firestoreStore";
 import { ByteBoundedMemoryStore } from "./memoryStore";
 import { RedisRestStore } from "./redisRestStore";
@@ -18,17 +19,29 @@ function createStoreFromEnv(): DistributedStore {
     return new RedisRestStore({ url: redisUrl, token: redisToken });
   }
 
-  const firestoreEnabled =
-    process.env.FIRESTORE_CACHE_ENABLED?.trim() === "true";
+  const firestoreSetting = process.env.FIRESTORE_CACHE_ENABLED?.trim();
   const projectId =
     process.env.FIRESTORE_PROJECT_ID?.trim() ||
     process.env.GOOGLE_CLOUD_PROJECT?.trim();
+  const runningOnCloudRun = Boolean(process.env.K_SERVICE?.trim());
+  const firestoreEnabled =
+    firestoreSetting !== "false" &&
+    Boolean(projectId) &&
+    (firestoreSetting === "true" || runningOnCloudRun);
 
   if (firestoreEnabled && projectId) {
     return new FirestoreRestStore({
       projectId,
       collection: process.env.FIRESTORE_COLLECTION?.trim() || "clearday_cache",
     });
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    logWarn(
+      "DistributedStore",
+      "Running without external store config; using byte-bounded process-local fallback",
+      { runningOnCloudRun },
+    );
   }
 
   return new ByteBoundedMemoryStore();

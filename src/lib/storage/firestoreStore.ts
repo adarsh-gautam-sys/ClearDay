@@ -1,24 +1,17 @@
 import { createHash } from "node:crypto";
+import { createRateLimitedLogger } from "../observability/logger";
+import { GcpMetadataTokenProvider } from "./gcpMetadataToken";
 import {
   type DistributedStore,
   MAX_CACHE_ENTRY_BYTES,
   type WindowCheckResult,
 } from "./types";
-import {
-  computeFixedWindow,
-  createRateLimitedWarner,
-  utf8ByteLength,
-} from "./utils";
+import { computeFixedWindow, utf8ByteLength } from "./utils";
 
 interface FirestoreRestOptions {
   projectId: string;
   collection?: string;
   timeoutMs?: number;
-}
-
-interface CachedToken {
-  accessToken: string;
-  expiresAtMs: number;
 }
 
 interface FirestoreDocument {
@@ -45,8 +38,8 @@ export class FirestoreRestStore implements DistributedStore {
   private readonly projectId: string;
   private readonly collection: string;
   private readonly timeoutMs: number;
-  private cachedToken: CachedToken | null = null;
-  private readonly warn = createRateLimitedWarner("FirestoreRestStore");
+  private readonly tokenProvider = new GcpMetadataTokenProvider();
+  private readonly logWarn = createRateLimitedLogger("FirestoreRestStore");
 
   constructor(options: FirestoreRestOptions) {
     this.projectId = options.projectId;
@@ -55,9 +48,9 @@ export class FirestoreRestStore implements DistributedStore {
   }
 
   async ping(): Promise<boolean> {
-    const token = await this.getAccessToken();
+    const token = await this.tokenProvider.getAccessToken();
     if (!token) {
-      this.warn("ping", "unable to acquire metadata OAuth token");
+      this.logWarn("ping", "unable to acquire metadata OAuth token");
       return false;
     }
 
@@ -82,7 +75,7 @@ export class FirestoreRestStore implements DistributedStore {
       });
 
       if (!writeRes.ok) {
-        this.warn("ping:write", `HTTP ${writeRes.status}`);
+        this.logWarn("ping:write", `HTTP ${writeRes.status}`);
         return false;
       }
 
@@ -92,7 +85,7 @@ export class FirestoreRestStore implements DistributedStore {
       });
 
       if (!readRes.ok) {
-        this.warn("ping:read", `HTTP ${readRes.status}`);
+        this.logWarn("ping:read", `HTTP ${readRes.status}`);
         return false;
       }
 
@@ -103,13 +96,13 @@ export class FirestoreRestStore implements DistributedStore {
       return parsed.ok === true;
     } catch (err) {
       const reason = err instanceof Error ? err.message : "network_error";
-      this.warn("ping", reason);
+      this.logWarn("ping", reason);
       return false;
     }
   }
 
   async getJson<T>(key: string): Promise<T | null> {
-    const token = await this.getAccessToken();
+    const token = await this.tokenProvider.getAccessToken();
     if (!token) return null;
 
     const docId = this.hashId("kv", key);
@@ -122,7 +115,7 @@ export class FirestoreRestStore implements DistributedStore {
       });
       if (res.status === 404) return null;
       if (!res.ok) {
-        this.warn("getJson", `HTTP ${res.status}`);
+        this.logWarn("getJson", `HTTP ${res.status}`);
         return null;
       }
 
@@ -137,7 +130,7 @@ export class FirestoreRestStore implements DistributedStore {
       return JSON.parse(payload) as T;
     } catch (err) {
       const reason = err instanceof Error ? err.message : "network_error";
-      this.warn("getJson", reason);
+      this.logWarn("getJson", reason);
       return null;
     }
   }
@@ -147,7 +140,7 @@ export class FirestoreRestStore implements DistributedStore {
     const serialized = JSON.stringify(value);
     if (utf8ByteLength(serialized) > MAX_CACHE_ENTRY_BYTES) return;
 
-    const token = await this.getAccessToken();
+    const token = await this.tokenProvider.getAccessToken();
     if (!token) return;
 
     const docId = this.hashId("kv", key);
@@ -170,11 +163,11 @@ export class FirestoreRestStore implements DistributedStore {
         signal: AbortSignal.timeout(this.timeoutMs),
       });
       if (!res.ok) {
-        this.warn("setJson", `HTTP ${res.status}`);
+        this.logWarn("setJson", `HTTP ${res.status}`);
       }
     } catch (err) {
       const reason = err instanceof Error ? err.message : "network_error";
-      this.warn("setJson", reason);
+      this.logWarn("setJson", reason);
     }
   }
 
@@ -188,7 +181,7 @@ export class FirestoreRestStore implements DistributedStore {
       now,
     );
 
-    const token = await this.getAccessToken();
+    const token = await this.tokenProvider.getAccessToken();
     if (!token) {
       return { count: 1, retryAfterSec };
     }
@@ -229,7 +222,7 @@ export class FirestoreRestStore implements DistributedStore {
       });
 
       if (!res.ok) {
-        this.warn("incrementWindow", `HTTP ${res.status}`);
+        this.logWarn("incrementWindow", `HTTP ${res.status}`);
         return { count: 1, retryAfterSec };
       }
 
@@ -244,7 +237,7 @@ export class FirestoreRestStore implements DistributedStore {
       };
     } catch (err) {
       const reason = err instanceof Error ? err.message : "network_error";
-      this.warn("incrementWindow", reason);
+      this.logWarn("incrementWindow", reason);
       return { count: 1, retryAfterSec };
     }
   }
@@ -256,45 +249,5 @@ export class FirestoreRestStore implements DistributedStore {
   private hashId(prefix: string, key: string): string {
     const hex = createHash("sha256").update(key).digest("hex").slice(0, 40);
     return `${prefix}_${hex}`;
-  }
-
-  private async getAccessToken(): Promise<string | null> {
-    const envToken = process.env.GOOGLE_OAUTH_ACCESS_TOKEN?.trim();
-    if (envToken) return envToken;
-
-    if (this.cachedToken && Date.now() < this.cachedToken.expiresAtMs) {
-      return this.cachedToken.accessToken;
-    }
-
-    try {
-      const res = await fetch(
-        "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
-        {
-          headers: { "Metadata-Flavor": "Google" },
-          signal: AbortSignal.timeout(1000),
-        },
-      );
-      if (!res.ok) {
-        this.warn("metadataToken", `HTTP ${res.status}`);
-        return null;
-      }
-
-      const data = (await res.json()) as {
-        access_token?: string;
-        expires_in?: number;
-      };
-      if (!data.access_token) return null;
-
-      const ttlMs = Math.max(60_000, ((data.expires_in ?? 300) - 60) * 1000);
-      this.cachedToken = {
-        accessToken: data.access_token,
-        expiresAtMs: Date.now() + ttlMs,
-      };
-      return data.access_token;
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : "network_error";
-      this.warn("metadataToken", reason);
-      return null;
-    }
   }
 }

@@ -2,11 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import {
-  createSoftParticleTexture,
-  getAtmospherePalette,
-  MAX_PARTICLES,
-} from "./atmospherePalette";
+import { getAtmospherePalette, MAX_PARTICLES } from "./atmospherePalette";
+import { createSmogScene } from "./createSmogScene";
 
 interface SmogAtmosphereCanvasProps {
   pm25: number;
@@ -14,8 +11,8 @@ interface SmogAtmosphereCanvasProps {
 
 /**
  * Interactive WebGL winter atmospheric inversion & particulate chamber.
- * Pre-allocates static buffers and reusable THREE.Color targets so 60fps
- * animation runs with zero per-frame allocations.
+ * Throttles when offscreen/hidden and degrades cleanly to a gradient on
+ * prefers-reduced-motion or missing WebGL contexts.
  */
 export function SmogAtmosphereCanvas({ pm25 }: SmogAtmosphereCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -59,57 +56,19 @@ export function SmogAtmosphereCanvas({ pm25 }: SmogAtmosphereCanvasProps) {
       return;
     }
 
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(48, 2, 0.1, 100);
-    camera.position.set(0, 0, 12);
-
-    const positions = new Float32Array(MAX_PARTICLES * 3);
-    const velocities = new Float32Array(MAX_PARTICLES * 3);
-    for (let i = 0; i < MAX_PARTICLES; i++) {
-      const i3 = i * 3;
-      positions[i3] = (Math.random() - 0.5) * 26;
-      positions[i3 + 1] = (Math.random() - 0.5) * 11;
-      positions[i3 + 2] = (Math.random() - 0.5) * 10;
-      velocities[i3] = (Math.random() - 0.5) * 0.35 + 0.12;
-      velocities[i3 + 1] = (Math.random() - 0.5) * 0.18 - 0.04;
-      velocities[i3 + 2] = (Math.random() - 0.5) * 0.12;
-    }
-
-    const particleGeo = new THREE.BufferGeometry();
-    const posAttr = new THREE.Float32BufferAttribute(positions, 3);
-    posAttr.setUsage(THREE.DynamicDrawUsage);
-    particleGeo.setAttribute("position", posAttr);
-
-    const spriteTex = createSoftParticleTexture();
-    const particleMat = new THREE.PointsMaterial({
-      size: 0.36,
-      map: spriteTex,
-      transparent: true,
-      depthWrite: false,
-      opacity: 0.6,
-      color: new THREE.Color(0x6e4e37),
-    });
-
-    const points = new THREE.Points(particleGeo, particleMat);
-    points.frustumCulled = false;
-    scene.add(points);
-
-    const hazeGeo = new THREE.PlaneGeometry(34, 6);
-    const hazeMat = new THREE.MeshBasicMaterial({
-      color: new THREE.Color(0xc29e78),
-      transparent: true,
-      opacity: 0.25,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      blending: THREE.NormalBlending,
-    });
-    const hazeLower = new THREE.Mesh(hazeGeo, hazeMat);
-    hazeLower.position.set(0, -1.6, -2);
-    scene.add(hazeLower);
-
-    // Pre-allocated scratch colors to prevent GC pressure inside animate loop
-    const targetParticleColor = new THREE.Color();
-    const targetHazeColor = new THREE.Color();
+    const resources = createSmogScene();
+    const {
+      scene,
+      camera,
+      particleGeo,
+      particleMat,
+      posAttr,
+      velocities,
+      hazeMat,
+      hazeLower,
+      targetParticleColor,
+      targetHazeColor,
+    } = resources;
 
     let pointerX = 0;
     let pointerY = 0;
@@ -233,11 +192,7 @@ export function SmogAtmosphereCanvas({ pm25 }: SmogAtmosphereCanvasProps) {
       container.removeEventListener("pointermove", handlePointerMove);
       document.removeEventListener("visibilitychange", handleVisibility);
       canvas.removeEventListener("webglcontextlost", handleContextLost);
-      particleGeo.dispose();
-      particleMat.dispose();
-      hazeGeo.dispose();
-      hazeMat.dispose();
-      spriteTex.dispose();
+      resources.dispose();
       renderer.dispose();
     };
   }, []);

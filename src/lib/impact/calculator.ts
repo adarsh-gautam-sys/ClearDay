@@ -1,4 +1,5 @@
 import type { ImpactCategory, PurifierSetup } from "../schemas";
+import { round1, round2 } from "../utils";
 import {
   BASELINE_INFILTRATION_BY_PURIFIER,
   CAR_WEEKLY_CO2_KG,
@@ -26,14 +27,6 @@ export interface ImpactSummary {
   winterPm25GramsAvoided: number;
   communityWinterCo2Tons: number;
   equivalentCarsOffRoadWeek: number;
-}
-
-function round1(value: number): number {
-  return Math.round(value * 10) / 10;
-}
-
-function round2(value: number): number {
-  return Math.round(value * 100) / 100;
 }
 
 /**

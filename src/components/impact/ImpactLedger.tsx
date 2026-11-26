@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { HelpCircle, Info, Leaf, Shield, Users } from "lucide-react";
+import { Check, Copy, HelpCircle, Info, Leaf, Shield, Users } from "lucide-react";
 import { CountUp } from "@/components/reactbits/CountUp";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,7 @@ export function ImpactLedger({
   onHouseholdsChange,
 }: ImpactLedgerProps) {
   const [modalOpen, setModalOpen] = useState(false);
+  const [summaryCopied, setSummaryCopied] = useState(false);
 
   const afterWidthPct =
     impact.indoorPm25Before > 0
@@ -36,6 +37,22 @@ export function ImpactLedger({
           Math.round((impact.indoorPm25After / impact.indoorPm25Before) * 100),
         )
       : 100;
+
+  const plainEnglishSummary =
+    adoptedCount > 0
+      ? `Your ${adoptedCount} adopted choice${adoptedCount === 1 ? "" : "s"} cut estimated indoor PM2.5 from ${impact.indoorPm25Before} to ${impact.indoorPm25After} µg/m³ (-${impact.indoorReductionPercent}%, ≈ ${impact.cigaretteEquivAvoidedPerDay} cig-equiv/day avoided) and prevent ${impact.dailyCo2KgSaved.toFixed(1)} kg CO₂e/day (${impact.winterCo2KgSaved} kg over 90 winter days).`
+      : `Adopt actions from your plan to drop estimated indoor PM2.5 below ${impact.indoorPm25Before} µg/m³ and start cutting winter household emissions.`;
+
+  async function handleCopySummary() {
+    if (typeof navigator === "undefined" || !navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(plainEnglishSummary);
+      setSummaryCopied(true);
+      window.setTimeout(() => setSummaryCopied(false), 2000);
+    } catch {
+      // Ignore clipboard permission denial
+    }
+  }
 
   return (
     <section
@@ -98,7 +115,11 @@ export function ImpactLedger({
         </div>
 
         <div
-          aria-hidden="true"
+          role="progressbar"
+          aria-label="Estimated indoor PM2.5 remaining after adopted actions"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={afterWidthPct}
           className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-[#DDD8CE]"
         >
           <div
@@ -167,6 +188,38 @@ export function ImpactLedger({
             +{impact.winterPm25GramsAvoided.toFixed(0)} g PM2.5 curbed
           </p>
         </div>
+      </div>
+
+      {/* Plain-English Direct Impact Explanation */}
+      <div className="mt-3 rounded-lg border border-[#E5E0D5] bg-[#F6F4EF] p-3">
+        <div className="flex items-center justify-between gap-2">
+          <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-[#0F6E6E]">
+            Direct Impact Summary
+          </span>
+          <Button
+            variant="paper"
+            size="sm"
+            onClick={handleCopySummary}
+          >
+            {summaryCopied ? (
+              <>
+                <Check className="h-3 w-3 text-[#0F6E6E]" aria-hidden="true" />
+                <span>Copied</span>
+              </>
+            ) : (
+              <>
+                <Copy className="h-3 w-3 text-[#0F6E6E]" aria-hidden="true" />
+                <span>Copy Summary</span>
+              </>
+            )}
+          </Button>
+        </div>
+        <p className="mt-1.5 text-xs leading-relaxed text-[#3F3F46]">
+          {plainEnglishSummary}
+        </p>
+        <span role="status" aria-live="polite" className="sr-only">
+          {summaryCopied ? "Direct impact summary copied to clipboard." : ""}
+        </span>
       </div>
 
       {/* Community Multiplier Radix Slider */}

@@ -139,4 +139,26 @@ describe("ClearDayWorkspace UI flows", () => {
       /Emergency Medical Notice/i,
     );
   });
+
+  it("recovers cleanly from corrupt localStorage and resets preferences + adopted actions", async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem("clearday_state_v1", "{bad-json");
+
+    render(
+      <ClearDayWorkspace initialAirQuality={snapshot} initialPlan={plan} />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Community" }));
+    expect(screen.getByRole("button", { name: "Community" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await user.click(screen.getByRole("button", { name: /Reset/i }));
+    expect(screen.getByRole("button", { name: "Household" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByText(/25 households/i)).toBeInTheDocument();
+  });
 });

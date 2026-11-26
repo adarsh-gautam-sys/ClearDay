@@ -60,12 +60,20 @@ export function CountUp({
   }, [to, durationMs]);
 
   const formatted = displayValue.toFixed(decimals);
+  const finalFormatted = to.toFixed(decimals);
 
   return (
     <span className={className}>
-      {prefix}
-      {formatted}
-      {suffix}
+      <span className="sr-only">
+        {prefix}
+        {finalFormatted}
+        {suffix}
+      </span>
+      <span aria-hidden="true">
+        {prefix}
+        {formatted}
+        {suffix}
+      </span>
     </span>
   );
 }

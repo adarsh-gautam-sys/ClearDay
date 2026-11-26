@@ -1,4 +1,5 @@
 import type { AqiBand, HourlyPoint } from "../schemas";
+import { round1 } from "../utils";
 
 export interface AqiClassification {
   band: AqiBand;
@@ -72,10 +73,6 @@ export interface SmogWindowsAnalysis {
     avgPm25: number;
     guidance: string;
   };
-}
-
-function round1(value: number): number {
-  return Math.round(value * 10) / 10;
 }
 
 /**

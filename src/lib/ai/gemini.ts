@@ -1,3 +1,4 @@
+import { logWarn } from "../observability/logger";
 import {
   ActionPlanResponseSchema,
   type ActionPlanResponse,
@@ -7,7 +8,8 @@ import {
 } from "../schemas";
 import { ACTION_PLAN_JSON_SCHEMA } from "./actionPlanSchema";
 import { getGenAiClient, getModelName } from "./client";
-import { buildFallbackChatReply, buildFallbackPlan } from "./fallbackPlan";
+import { buildFallbackChatReply } from "./fallbackChat";
+import { buildFallbackPlan } from "./fallbackPlan";
 import { buildChatPrompts, buildPlanPrompts } from "./prompts";
 import { formatSseEvent } from "./sse";
 
@@ -119,7 +121,7 @@ export async function generateActionPlan(
     return validated.data;
   } catch (err) {
     const reason = err instanceof Error ? err.message : "unknown_error";
-    console.warn(`[ClearDay] Falling back from Gemini plan generation: ${reason}`);
+    logWarn("GeminiPlan", "Falling back from Gemini plan generation", { reason });
     return buildFallbackPlan(airQuality, profile);
   }
 }
@@ -200,7 +202,7 @@ export async function streamCopilotReply(params: {
           }
           const reason =
             streamErr instanceof Error ? streamErr.message : "stream_error";
-          console.warn(`[ClearDay] Gemini stream interrupted: ${reason}`);
+          logWarn("GeminiChat", "Gemini stream interrupted", { reason });
           controller.enqueue(
             encodeSse({
               event: "chunk",
@@ -219,7 +221,7 @@ export async function streamCopilotReply(params: {
     return { stream, mode: "gemini" };
   } catch (err) {
     const reason = err instanceof Error ? err.message : "unknown_error";
-    console.warn(`[ClearDay] Falling back from Gemini chat: ${reason}`);
+    logWarn("GeminiChat", "Falling back from Gemini chat", { reason });
     return {
       stream: createSseFallbackStream(
         buildFallbackChatReply(params),

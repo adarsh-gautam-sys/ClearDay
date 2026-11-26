@@ -183,6 +183,9 @@ export function ActionPlanTabs({
           <p className="mt-2 text-xs leading-relaxed text-[#18181B]">
             {plan.communityAdvisoryDraft}
           </p>
+          <span role="status" aria-live="polite" className="sr-only">
+            {copied ? "Community advisory notice copied to clipboard." : ""}
+          </span>
         </div>
       )}
     </section>

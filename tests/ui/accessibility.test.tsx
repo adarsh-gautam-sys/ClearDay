@@ -1,7 +1,7 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ClearDayWorkspace } from "@/components/ClearDayWorkspace";
 import { AgentStatus } from "@/components/copilot/AgentStatus";
 import { buildFallbackPlan } from "@/lib/ai/fallbackPlan";
@@ -12,8 +12,36 @@ describe("Accessibility & ThinkingOrb lifecycle", () => {
   const snapshot = buildPresetSnapshot(CITY_PRESETS[0]!);
   const plan = buildFallbackPlan(snapshot, DEFAULT_PROFILE);
 
-  it("has zero axe-core violations (including landmark regions) across workspace views and Radix portal", async () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("has zero axe-core violations (including landmark regions & open combobox) across workspace views and Radix portal", async () => {
     const user = userEvent.setup();
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          results: [
+            {
+              name: "Lahore",
+              country: "Pakistan",
+              latitude: 31.55,
+              longitude: 74.35,
+              timezone: "Asia/Karachi",
+            },
+            {
+              name: "London",
+              country: "United Kingdom",
+              latitude: 51.5,
+              longitude: -0.12,
+              timezone: "Europe/London",
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
     render(
       <ClearDayWorkspace initialAirQuality={snapshot} initialPlan={plan} />,
     );
@@ -27,6 +55,18 @@ describe("Accessibility & ThinkingOrb lifecycle", () => {
 
     const defaultAudit = await axe.run(document.body, axeOptions);
     expect(defaultAudit.violations).toEqual([]);
+
+    // Open CitySearchCombobox listbox and verify single-select ARIA compliance
+    await user.type(
+      screen.getByRole("combobox", { name: /Search city for local air quality/i }),
+      "La",
+    );
+    await waitFor(() => {
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+    });
+    const comboboxAudit = await axe.run(document.body, axeOptions);
+    expect(comboboxAudit.violations).toEqual([]);
+    await user.keyboard("{Escape}");
 
     // Switch to 03 Sustainable Swaps tab (verifies live tabpanel landmarks)
     await user.click(screen.getByRole("tab", { name: /Sustainable Swaps/i }));
@@ -43,7 +83,7 @@ describe("Accessibility & ThinkingOrb lifecycle", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     const modalAudit = await axe.run(document.body, axeOptions);
     expect(modalAudit.violations).toEqual([]);
-  }, 15_000);
+  }, 20_000);
 
   it("mounts ThinkingOrb live status during active phases and unmounts when idle or done", () => {
     const { rerender } = render(

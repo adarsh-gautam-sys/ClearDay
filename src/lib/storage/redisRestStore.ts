@@ -1,13 +1,10 @@
+import { createRateLimitedLogger } from "../observability/logger";
 import {
   type DistributedStore,
   MAX_CACHE_ENTRY_BYTES,
   type WindowCheckResult,
 } from "./types";
-import {
-  computeFixedWindow,
-  createRateLimitedWarner,
-  utf8ByteLength,
-} from "./utils";
+import { computeFixedWindow, utf8ByteLength } from "./utils";
 
 interface RedisRestOptions {
   url: string;
@@ -29,7 +26,7 @@ export class RedisRestStore implements DistributedStore {
   private readonly baseUrl: string;
   private readonly token: string;
   private readonly timeoutMs: number;
-  private readonly warn = createRateLimitedWarner("RedisRestStore");
+  private readonly warn = createRateLimitedLogger("RedisRestStore");
 
   constructor(options: RedisRestOptions) {
     this.baseUrl = options.url.replace(/\/+$/, "");

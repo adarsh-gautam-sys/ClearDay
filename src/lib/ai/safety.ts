@@ -17,12 +17,13 @@ const EMERGENCY_PATTERNS: readonly RegExp[] = [
 ];
 
 /**
- * Strips ASCII control characters (preserving newlines) and normalizes length
- * before any prompt assembly.
+ * Strips ASCII control characters, Unicode bidirectional overrides, and
+ * zero-width invisible characters while normalizing length before prompt assembly.
  */
 export function sanitizeUserText(input: string, maxLength: number): string {
   const cleaned = input
     .replace(/[\u0000-\u0009\u000B-\u001F\u007F]/g, " ")
+    .replace(/[\u200B-\u200D\u202A-\u202E\u2066-\u2069\uFEFF]/g, "")
     .replace(/[ \t]{2,}/g, " ")
     .trim();
   return cleaned.slice(0, maxLength);
